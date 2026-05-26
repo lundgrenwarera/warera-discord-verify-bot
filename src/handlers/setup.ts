@@ -127,7 +127,7 @@ export async function handleSetupComponent(
     return renderTo(ctx, { kind: "main" });
   }
 
-  if (id === "setup:countries") return renderTo(ctx, { kind: "country-roles" });
+  if (id === "setup:countries") return renderTo(ctx, { kind: "countries" });
   if (id === "setup:country-roles") return renderTo(ctx, { kind: "country-roles" });
   if (id === "setup:gov-roles") return renderTo(ctx, { kind: "gov-roles" });
   if (id === "setup:foreign-gov") return renderTo(ctx, { kind: "foreign-gov" });
@@ -287,7 +287,7 @@ export async function handleSetupModal(
     if (!country) return showAck(ctx, `Unknown country: **${value}**. Try again with the exact name.`);
     const cfg = await load(env, ctx.guildId);
     await save(env, ctx.guildId, addAllowedCountry(cfg, country));
-    return renderTo(ctx, { kind: "country-roles" });
+    return renderTo(ctx, { kind: "countries" });
   }
 
   if (customId === "setup_modal:country-remove") {
@@ -296,7 +296,7 @@ export async function handleSetupModal(
     const match = allowed.find((c) => c.toLowerCase() === value.toLowerCase());
     if (!match) return showAck(ctx, `**${value}** isn't in the allow-list.`);
     await save(env, ctx.guildId, removeAllowedCountry(cfg, match));
-    return renderTo(ctx, { kind: "country-roles" });
+    return renderTo(ctx, { kind: "countries" });
   }
 
   if (customId === "setup_modal:country-role-country") {

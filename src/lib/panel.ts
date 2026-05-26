@@ -5,6 +5,7 @@ import { COLOR_PRIMARY, CREDIT_AUTHOR } from "./messages";
 
 export type PanelKind =
   | { kind: "main" }
+  | { kind: "countries" }
   | { kind: "country-roles"; country?: string }
   | { kind: "gov-roles"; bucket?: GovernmentBucket }
   | { kind: "foreign-gov"; country?: string };
@@ -267,6 +268,7 @@ export function foreignGovPanel(cfg: GuildConfig, country: string | undefined): 
 export function renderPanel(kind: PanelKind, cfg: GuildConfig): PanelPayload {
   switch (kind.kind) {
     case "main": return mainPanel(cfg);
+    case "countries": return countriesPanel(cfg);
     case "country-roles": return countryRolesPanel(cfg, kind.country);
     case "gov-roles": return govRolesPanel(cfg, kind.bucket);
     case "foreign-gov": return foreignGovPanel(cfg, kind.country);

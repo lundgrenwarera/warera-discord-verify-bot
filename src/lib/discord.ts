@@ -92,3 +92,20 @@ export async function addRoleToMember(args: {
   if (r.ok) return { ok: true, status: r.status };
   return { ok: false, status: r.status, body: await r.text() };
 }
+
+export async function sendChannelMessage(args: {
+  botToken: string;
+  channelId: string;
+  payload: Record<string, unknown>;
+}): Promise<{ ok: boolean; status: number; body?: string }> {
+  const r = await fetch(`${API}/channels/${args.channelId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${args.botToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(args.payload),
+  });
+  if (r.ok) return { ok: true, status: r.status };
+  return { ok: false, status: r.status, body: await r.text() };
+}

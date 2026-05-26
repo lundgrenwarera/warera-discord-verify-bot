@@ -1,5 +1,5 @@
 import type { Env, GuildConfig } from "../types";
-import { editOriginalResponse } from "../lib/discord";
+import { editOriginalResponse, sendChannelMessage } from "../lib/discord";
 
 const ADMIN_PERMS = 0x8n;
 
@@ -105,6 +105,51 @@ export async function runConfigRemoveCountryRole(args: CommonArgs & { country: s
   cfg.countryRoles = Object.keys(map).length > 0 ? map : undefined;
   await saveConfig(args.env, args.guildId, cfg);
   await edit(args, `Removed <@&${args.roleId}> from **${args.country}** verifications.\n\n${renderConfig(cfg)}`);
+}
+
+export async function runConfigPostWelcome(args: CommonArgs & { channelId: string }): Promise<void> {
+  if (!isAdmin(args.callerPermissions)) {
+    await edit(args, "Only admins can post the welcome message.");
+    return;
+  }
+  const cfg = await loadConfig(args.env, args.guildId);
+  if (!cfg.verifiedRoleId) {
+    await edit(args, "Set a verified role first with `/verify-config set-verified-role`, then post the welcome message.");
+    return;
+  }
+  const allowed = cfg.allowedCountries ?? [];
+  const restriction = allowed.length > 0
+    ? `\n\nThis server verifies citizens of: **${allowed.join(", ")}**.`
+    : "";
+  const payload = {
+    embeds: [{
+      title: "Verify your War Era account",
+      description:
+        "Click below to link your War Era account to Discord. Takes a minute and proves ownership cryptographically. No screenshots, no mod approval."
+        + restriction,
+      color: 0xc8821e,
+    }],
+    components: [{
+      type: 1,
+      components: [{
+        type: 2,
+        style: 1,
+        label: "Verify",
+        custom_id: "verify:start",
+        emoji: { name: "🔗" },
+      }],
+    }],
+  };
+  const res = await sendChannelMessage({
+    botToken: args.env.DISCORD_BOT_TOKEN,
+    channelId: args.channelId,
+    payload,
+  });
+  if (!res.ok) {
+    await edit(args, `Couldn't post the welcome message (Discord ${res.status}). Make sure the bot can **View Channel** and **Send Messages** in this channel.`);
+    return;
+  }
+  await edit(args, "Welcome message posted in this channel.");
 }
 
 export async function runConfigReset(args: CommonArgs): Promise<void> {

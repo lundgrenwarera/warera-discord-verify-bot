@@ -4,38 +4,52 @@ A Discord bot that verifies War Era account ownership automatically. No moderato
 
 ## How verification works
 
-1. User runs `/verify username:lundgren` in your Discord server.
-2. The bot looks up the War Era account, fetches their factories, and generates a unique short-lived token like `WV-7K2M9X`.
-3. User renames any one of their factories in War Era to include that token.
-4. User clicks **Confirm**. The bot re-fetches their factories and checks for the token.
-5. On match: the bot writes the Discord ↔ War Era link to KV, assigns the verified role (and country role if configured), and tells the user they can rename the factory back.
+1. Admin posts a welcome message in any channel (see Setup below). The message has a **Verify** button.
+2. A new member clicks **Verify**. A modal pops up asking for their War Era username.
+3. The bot looks up the account, fetches their companies, and replies with a one-shot token like `WV-7K2M9X`.
+4. The user renames any one of their companies in War Era to include the token, then clicks **Confirm**.
+5. The bot re-fetches the companies, finds the token, assigns the verified role (and any country-specific roles), and the user is done. They can rename the company back to whatever they like.
 
-The mechanism proves ownership because only the actual account owner can rename their factories. Tokens are cryptographically random (32-char alphabet, 6 chars), expire in 15 minutes, are bound to the Discord user who started the flow, and are deleted after a successful match.
+The mechanism proves ownership because only the actual account owner can rename their companies. Tokens are cryptographically random (32-char alphabet, 6 chars), expire in 15 minutes, are bound to the Discord user who started the flow, and are deleted after a successful match.
 
 ## Commands
 
 | Command | Who | What |
 |---|---|---|
-| `/verify username:<name>` | Anyone | Start verification for a War Era username |
-| `/verify-setup verified_role:<role> [country_roles:<json>]` | Server admins | Configure which Discord role to assign on verification, and optionally restrict to specific War Era countries |
+| `/verify username:<name>` | Anyone | Start verification with the username inline. The Verify-button flow is usually nicer. |
+| `/verify-config show` | Admins | Show this server's current config |
+| `/verify-config set-verified-role role:@Verified` | Admins | Required. Role assigned to anyone who passes verification. |
+| `/verify-config allow-country country:Netherlands` | Admins | Restrict verification to specific War Era countries. Run multiple times to allow multiple. Country names autocomplete. |
+| `/verify-config disallow-country country:Netherlands` | Admins | Remove a country from the allow-list |
+| `/verify-config add-country-role country:Netherlands role:@Citizen` | Admins | Extra role for users of a specific country (in addition to the verified role) |
+| `/verify-config remove-country-role country:Netherlands role:@Citizen` | Admins | Undo |
+| `/verify-config post-welcome` | Admins | Post the welcome message with the Verify button into the current channel |
+| `/verify-config reset` | Admins | Wipe all verification config for this server |
 | `/whois user:<member>` or `/whois username:<name>` | Mods | Look up a verified link |
 | `/unverify [user:<member>]` | Anyone (self), admins (others) | Remove a verification link |
 
-## Country restriction
-
-If you pass `country_roles` to `/verify-setup`, only members from those countries can verify. Example for a Dutch server:
+## Example: setting up an NL Discord
 
 ```
-/verify-setup verified_role:@Verified country_roles:{"Netherlands":"123456789012345678"}
+/verify-config set-verified-role role:@Verified
+/verify-config allow-country country:Netherlands
+/verify-config post-welcome
 ```
 
-Multiple countries (citizens + embassies):
+Done. Only Dutch citizens can verify, they get `@Verified`, the welcome message lives in whatever channel you ran `post-welcome` in.
+
+Multi-country (NL + BE embassy):
 
 ```
-country_roles:{"Netherlands":"<citizen-role-id>","Belgium":"<embassy-role-id>"}
+/verify-config set-verified-role role:@Verified
+/verify-config allow-country country:Netherlands
+/verify-config allow-country country:Belgium
+/verify-config add-country-role country:Netherlands role:@Dutch
+/verify-config add-country-role country:Belgium role:@BelgianEmbassy
+/verify-config post-welcome
 ```
 
-If `country_roles` is empty or not set, any War Era user can verify and just gets the `verified_role`.
+Dutch users get `@Verified` + `@Dutch`. Belgians get `@Verified` + `@BelgianEmbassy`. Other countries are rejected.
 
 ## Self-host setup
 
@@ -43,9 +57,9 @@ If `country_roles` is empty or not set, any War Era user can verify and just get
 2. **Create the Cloudflare Worker**:
    ```bash
    pnpm install
-   pnpm wrangler kv:namespace create TOKENS
-   pnpm wrangler kv:namespace create LINKS
-   pnpm wrangler kv:namespace create GUILDS
+   pnpm wrangler kv namespace create TOKENS
+   pnpm wrangler kv namespace create LINKS
+   pnpm wrangler kv namespace create GUILDS
    ```
    Paste the returned IDs into `wrangler.toml`.
 3. **Set secrets**:
@@ -60,11 +74,14 @@ If `country_roles` is empty or not set, any War Era user can verify and just get
    ```
 5. **Register the slash commands** (one-time, takes up to an hour to propagate globally):
    ```bash
-   cp .dev.vars.example .dev.vars   # then fill in your IDs
-   pnpm register-commands
+   DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... pnpm register-commands
    ```
 6. **Wire Discord to the worker**: copy the worker URL into the Discord application's "Interactions Endpoint URL" field. Discord will ping it to verify.
-7. **Install the bot** to your Discord server with the OAuth URL (scopes: `bot` `applications.commands`, permissions: `Manage Roles`).
+7. **Install the bot** to your Discord server with an OAuth URL. Required bot permissions: `Manage Roles` and `Send Messages`. Example URL pattern:
+   ```
+   https://discord.com/oauth2/authorize?client_id=<APP_ID>&permissions=268437504&scope=bot+applications.commands
+   ```
+8. **In your server**, drag the bot's role above any role it needs to assign in Server Settings → Roles. Run `/verify-config set-verified-role` and `/verify-config post-welcome` to get started.
 
 ## Rate limits
 

@@ -4,6 +4,7 @@ import type {
   APIApplicationCommandInteraction,
   APIApplicationCommandInteractionDataOption,
   APIMessageComponentInteraction,
+  APIModalSubmitInteraction,
 } from "discord-api-types/v10";
 import { verifySignature } from "./lib/discord";
 import { consume, LIMITS } from "./lib/rate-limit";
@@ -13,7 +14,7 @@ import { runWhois } from "./handlers/whois";
 import {
   runConfigShow, runConfigSetVerifiedRole, runConfigAllowCountry,
   runConfigDisallowCountry, runConfigAddCountryRole, runConfigRemoveCountryRole,
-  runConfigReset,
+  runConfigReset, runConfigPostWelcome,
 } from "./handlers/config";
 import { runUnverify } from "./handlers/unverify";
 import { getCountryNames } from "./lib/warera-api";
@@ -50,12 +51,21 @@ export default {
     }
 
     if (interaction.type === InteractionType.MessageComponent) {
+      const customId = ((interaction as APIMessageComponentInteraction).data as { custom_id?: string }).custom_id ?? "";
+      if (customId === "verify:start") {
+        return json(verifyModalResponse());
+      }
       ctx.waitUntil(handleComponent(interaction as APIMessageComponentInteraction, env));
       return new Response(DEFERRED_UPDATE, { headers: { "content-type": "application/json" } });
     }
 
     if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
       return handleAutocomplete(interaction as APIApplicationCommandAutocompleteInteraction, env);
+    }
+
+    if (interaction.type === InteractionType.ModalSubmit) {
+      ctx.waitUntil(handleModalSubmit(interaction as APIModalSubmitInteraction, env));
+      return new Response(DEFERRED_EPHEMERAL, { headers: { "content-type": "application/json" } });
     }
 
     return new Response("unhandled interaction type", { status: 400 });
@@ -152,6 +162,7 @@ async function handleCommand(interaction: APIApplicationCommandInteraction, env:
     await routeVerifyConfig({
       env, interactionToken: interaction.token, options,
       callerPermissions: permissions, guildId,
+      channelId: interaction.channel_id ?? interaction.channel?.id,
     });
     return;
   }
@@ -177,6 +188,7 @@ async function routeVerifyConfig(args: {
   callerPermissions: bigint;
   guildId: string;
   options: APIApplicationCommandInteractionDataOption[];
+  channelId?: string;
 }): Promise<void> {
   const sub = args.options[0] as { name: string; options?: SubOption[] } | undefined;
   if (!sub) {
@@ -244,11 +256,73 @@ async function routeVerifyConfig(args: {
     await runConfigRemoveCountryRole({ ...common, country, roleId });
     return;
   }
+  if (sub.name === "post-welcome") {
+    if (!args.channelId) {
+      await editFallback(args.env, args.interactionToken, "Run this command in the channel where you want the welcome message.");
+      return;
+    }
+    await runConfigPostWelcome({ ...common, channelId: args.channelId });
+    return;
+  }
   if (sub.name === "reset") {
     await runConfigReset(common);
     return;
   }
   await editFallback(args.env, args.interactionToken, `Unknown subcommand: ${sub.name}`);
+}
+
+function verifyModalResponse() {
+  return {
+    type: InteractionResponseType.Modal,
+    data: {
+      custom_id: "verify_modal",
+      title: "Verify your War Era account",
+      components: [{
+        type: 1,
+        components: [{
+          type: 4,
+          custom_id: "username",
+          label: "War Era username",
+          style: 1,
+          min_length: 2,
+          max_length: 32,
+          required: true,
+          placeholder: "your in-game username",
+        }],
+      }],
+    },
+  };
+}
+
+async function handleModalSubmit(interaction: APIModalSubmitInteraction, env: Env): Promise<void> {
+  const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
+  const guildId = interaction.guild_id;
+  if (!discordUserId || !guildId) return;
+
+  const customId = (interaction.data as { custom_id?: string }).custom_id ?? "";
+  if (customId !== "verify_modal") {
+    await editFallback(env, interaction.token, "Unknown modal.");
+    return;
+  }
+
+  const rows = (interaction.data as {
+    components?: Array<{ components?: Array<{ custom_id?: string; value?: string }> }>;
+  }).components ?? [];
+  let username = "";
+  for (const row of rows) {
+    for (const c of row.components ?? []) {
+      if (c.custom_id === "username") username = String(c.value ?? "");
+    }
+  }
+  if (!username.trim()) {
+    await editFallback(env, interaction.token, "Username is required.");
+    return;
+  }
+
+  await runVerifyStart({
+    env, interactionToken: interaction.token,
+    discordUserId, guildId, username: username.trim(),
+  });
 }
 
 async function handleComponent(interaction: APIMessageComponentInteraction, env: Env): Promise<void> {

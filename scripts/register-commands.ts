@@ -53,6 +53,10 @@ const commands = [
           { type: 8, name: "role", description: "Role to remove from this country", required: true },
         ],
       },
+      {
+        type: 1, name: "post-welcome",
+        description: "Post a welcome message with a Verify button in this channel",
+      },
       { type: 1, name: "reset", description: "Wipe all verification config for this server" },
     ],
   },

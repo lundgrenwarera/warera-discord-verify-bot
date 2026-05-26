@@ -16,6 +16,7 @@ import { editOriginalResponse, sendChannelMessage } from "../lib/discord";
 import { getCountryNames } from "../lib/warera-api";
 import { renderPanel, type PanelKind } from "../lib/panel";
 import { modal, row, textInput } from "../lib/components";
+import { getGuildRoleMap } from "../lib/role-cache";
 
 type Edit = (payload: Record<string, unknown>) => Promise<void>;
 
@@ -49,7 +50,8 @@ function makeEdit(env: Env, token: string): Edit {
 
 async function renderTo(ctx: Ctx, kind: PanelKind): Promise<void> {
   const cfg = await load(ctx.env, ctx.guildId);
-  const payload = renderPanel(kind, cfg);
+  const roleNames = await getGuildRoleMap(ctx.env, ctx.guildId);
+  const payload = renderPanel(kind, { cfg, roleNames });
   await makeEdit(ctx.env, ctx.interactionToken)({
     embeds: payload.embeds,
     components: payload.components,

@@ -101,6 +101,25 @@ export async function addRoleToMember(args: {
   return { ok: false, status: r.status, body: await r.text() };
 }
 
+export interface DiscordRole {
+  id: string;
+  name: string;
+  color: number;
+  position: number;
+  managed: boolean;
+}
+
+export async function fetchGuildRoles(botToken: string, guildId: string): Promise<DiscordRole[]> {
+  const r = await fetch(`${API}/guilds/${guildId}/roles`, {
+    headers: { Authorization: `Bot ${botToken}` },
+  });
+  if (!r.ok) {
+    console.error(`fetchGuildRoles failed: ${r.status} ${await r.text()}`);
+    return [];
+  }
+  return r.json() as Promise<DiscordRole[]>;
+}
+
 export async function sendChannelMessage(args: {
   botToken: string;
   channelId: string;

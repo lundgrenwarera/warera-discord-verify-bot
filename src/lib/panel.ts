@@ -2,6 +2,7 @@ import type { GovernmentBucket, GuildConfig } from "../types";
 import { GOVERNMENT_BUCKET_LABELS, GOVERNMENT_BUCKETS } from "../types";
 import { ButtonStyle, button, roleSelect, row, stringSelect } from "./components";
 import { COLOR_PRIMARY, CREDIT_AUTHOR } from "./messages";
+import { roleLabel, type RoleMap } from "./role-cache";
 
 export type PanelKind =
   | { kind: "main" }
@@ -15,17 +16,25 @@ export interface PanelPayload {
   components: unknown[];
 }
 
+export interface PanelContext {
+  cfg: GuildConfig;
+  roleNames: RoleMap;
+}
+
 const STATUS_OK = "🟢";
 const STATUS_OFF = "⚫";
 
 function statusEmbed(cfg: GuildConfig) {
+  const countryCount = Object.keys(cfg.countryRoles ?? {}).length;
+  const govCount = Object.keys(cfg.governmentRoles ?? {}).length;
+  const foreignCount = Object.keys(cfg.foreignCountryRoles ?? {}).length;
   const lines = [
-    `${cfg.verifiedRoleId ? STATUS_OK : STATUS_OFF} **Verified role**: ${cfg.verifiedRoleId ? `<@&${cfg.verifiedRoleId}>` : "_not set_"}`,
-    `${(cfg.allowedCountries?.length ?? 0) > 0 ? STATUS_OK : STATUS_OFF} **Allowed countries**: ${cfg.allowedCountries?.length ? cfg.allowedCountries.join(", ") : "_any_"}`,
-    `${Object.keys(cfg.countryRoles ?? {}).length > 0 ? STATUS_OK : STATUS_OFF} **Country roles**: ${Object.keys(cfg.countryRoles ?? {}).length} configured`,
-    `${Object.keys(cfg.governmentRoles ?? {}).length > 0 ? STATUS_OK : STATUS_OFF} **Government roles**: ${Object.keys(cfg.governmentRoles ?? {}).length} buckets`,
-    `${cfg.allowForeignGovernment ? STATUS_OK : STATUS_OFF} **Foreign gov bypass**: ${cfg.allowForeignGovernment ? "enabled" : "disabled"} (${Object.keys(cfg.foreignCountryRoles ?? {}).length} countries)`,
-    `${cfg.minLevel ? STATUS_OK : STATUS_OFF} **Min level for country roles**: ${cfg.minLevel ? cfg.minLevel : "_none_"}`,
+    `${cfg.verifiedRoleId ? STATUS_OK : STATUS_OFF} **Verified role**: ${cfg.verifiedRoleId ? `<@&${cfg.verifiedRoleId}>` : "_not set — pick one to start_"}`,
+    `${(cfg.allowedCountries?.length ?? 0) > 0 ? STATUS_OK : STATUS_OFF} **Who can verify**: ${cfg.allowedCountries?.length ? `citizens of ${cfg.allowedCountries.join(", ")}` : "_anyone with a War Era account_"}`,
+    `${countryCount > 0 ? STATUS_OK : STATUS_OFF} **Country roles**: ${countryCount === 0 ? "_none_" : `${countryCount} configured`}`,
+    `${govCount > 0 ? STATUS_OK : STATUS_OFF} **Government roles**: ${govCount === 0 ? "_none_" : `${govCount} position${govCount === 1 ? "" : "s"} configured`}`,
+    `${cfg.allowForeignGovernment ? STATUS_OK : STATUS_OFF} **Foreign government bypass**: ${cfg.allowForeignGovernment ? `**on** (${foreignCount} ${foreignCount === 1 ? "country" : "countries"})` : "_off_"}`,
+    `${cfg.minLevel ? STATUS_OK : STATUS_OFF} **Anti-multi level gate**: ${cfg.minLevel ? `country roles only assigned at lvl ${cfg.minLevel}+` : "_off_"}`,
   ];
   return {
     title: "Verify Bot setup",
@@ -41,21 +50,21 @@ export function mainPanel(cfg: GuildConfig): PanelPayload {
     components: [
       row(roleSelect({
         custom_id: "setup:verified-role",
-        placeholder: cfg.verifiedRoleId ? "Change the verified role" : "Pick the verified role",
+        placeholder: cfg.verifiedRoleId ? "Change the verified role" : "Step 1: pick the verified role",
       })),
       row(
-        button({ custom_id: "setup:countries", label: "Allowed countries", emoji: "🌍" }),
-        button({ custom_id: "setup:country-roles", label: "Country roles", emoji: "🏷️" }),
+        button({ custom_id: "setup:countries", label: "Who can verify", emoji: "🌍" }),
+        button({ custom_id: "setup:country-roles", label: "Roles per country", emoji: "🏷️" }),
         button({ custom_id: "setup:gov-roles", label: "Government roles", emoji: "🏛️" }),
       ),
       row(
         button({ custom_id: "setup:foreign-gov", label: "Foreign government", emoji: "🌐" }),
-        button({ custom_id: "setup:min-level", label: cfg.minLevel ? `Min level: ${cfg.minLevel}` : "Min level for country roles", emoji: "🎚️" }),
-        button({ custom_id: "setup:post-welcome", label: "Post welcome here", style: ButtonStyle.Success, emoji: "📣", disabled: !cfg.verifiedRoleId }),
+        button({ custom_id: "setup:min-level", label: cfg.minLevel ? `Level gate: ${cfg.minLevel}+` : "Level gate", emoji: "🎚️" }),
+        button({ custom_id: "setup:post-welcome", label: "Post verify message here", style: ButtonStyle.Success, emoji: "📣", disabled: !cfg.verifiedRoleId }),
       ),
       row(
-        button({ custom_id: "setup:show-config", label: "Show raw config" }),
-        button({ custom_id: "setup:reset", label: "Reset config", style: ButtonStyle.Danger, emoji: "🗑️" }),
+        button({ custom_id: "setup:show-config", label: "Raw config" }),
+        button({ custom_id: "setup:reset", label: "Reset everything", style: ButtonStyle.Danger, emoji: "🗑️" }),
       ),
     ],
   };
@@ -64,14 +73,14 @@ export function mainPanel(cfg: GuildConfig): PanelPayload {
 export function countriesPanel(cfg: GuildConfig): PanelPayload {
   const allowed = cfg.allowedCountries ?? [];
   const description = allowed.length === 0
-    ? "_No restrictions. Anyone with a verified War Era account can verify._"
-    : allowed.map((c) => `• ${c}`).join("\n");
+    ? "_Anyone with a verified War Era account can verify. Add countries to restrict._"
+    : `Citizens of these countries can verify:\n${allowed.map((c) => `• ${c}`).join("\n")}`;
   return {
     embeds: [{
-      title: "Allowed countries",
+      title: "Who can verify",
       description,
       color: COLOR_PRIMARY,
-      footer: { text: "Citizens of these countries can verify. Foreign government bypass is configured separately." },
+      footer: { text: "Foreign government members are configured separately — see the Foreign government button on the main panel." },
     }],
     components: [
       row(
@@ -84,36 +93,40 @@ export function countriesPanel(cfg: GuildConfig): PanelPayload {
           disabled: allowed.length === 0,
         }),
       ),
-      row(button({ custom_id: "setup:back", label: "← Back", style: ButtonStyle.Secondary })),
+      row(button({ custom_id: "setup:back", label: "← Back" })),
     ],
   };
 }
 
-export function countryRolesPanel(cfg: GuildConfig, country: string | undefined): PanelPayload {
+export function countryRolesPanel(
+  ctx: PanelContext,
+  country: string | undefined,
+): PanelPayload {
+  const { cfg, roleNames } = ctx;
   if (!country) {
-    const countries = Object.keys(cfg.countryRoles ?? {}).sort();
+    const configured = Object.keys(cfg.countryRoles ?? {}).sort();
     const allowed = cfg.allowedCountries ?? [];
-    const editable = Array.from(new Set([...allowed, ...countries])).sort();
-    const lines = countries.length === 0
-      ? ["_No per-country roles configured._"]
+    const choices = Array.from(new Set([...allowed, ...configured])).sort();
+    const lines = configured.length === 0
+      ? ["_No per-country roles yet._", "", "Pick a country below to assign one."]
       : Object.entries(cfg.countryRoles ?? {})
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([c, roles]) => `**${c}**: ${roles.map((id) => `<@&${id}>`).join(", ")}`);
     return {
       embeds: [{
-        title: "Country roles",
+        title: "Roles per country",
         description: lines.join("\n"),
         color: COLOR_PRIMARY,
-        footer: { text: "Extra roles assigned to verified citizens of a specific country." },
+        footer: { text: "Extra roles assigned to verified citizens of a specific country, on top of the base verified role." },
       }],
       components: [
-        ...(editable.length > 0 ? [row(stringSelect({
+        ...(choices.length > 0 ? [row(stringSelect({
           custom_id: "setup:country-role:pick",
-          placeholder: "Pick a country to manage",
-          options: editable.map((c) => ({ label: c, value: c })),
+          placeholder: "Pick a country",
+          options: choices.map((c) => ({ label: c, value: c })),
         }))] : []),
         row(
-          button({ custom_id: "setup:country-role:add-country", label: "Manage a different country", emoji: "🌍" }),
+          button({ custom_id: "setup:country-role:add-country", label: "Other country…", emoji: "🌍" }),
           button({ custom_id: "setup:back", label: "← Back" }),
         ),
       ],
@@ -123,21 +136,21 @@ export function countryRolesPanel(cfg: GuildConfig, country: string | undefined)
   const roles = cfg.countryRoles?.[country] ?? [];
   return {
     embeds: [{
-      title: `Country roles — ${country}`,
+      title: `${country} — extra roles`,
       description: roles.length === 0
-        ? "_No roles set for this country yet._"
+        ? "_No extra roles for this country yet. Use the dropdown below to add one._"
         : roles.map((id) => `• <@&${id}>`).join("\n"),
       color: COLOR_PRIMARY,
     }],
     components: [
       row(roleSelect({
         custom_id: `setup:country-role:add:${country}`,
-        placeholder: "Add a role for citizens of this country",
+        placeholder: `Add a role for citizens of ${country}`,
       })),
       ...(roles.length > 0 ? [row(stringSelect({
         custom_id: `setup:country-role:remove:${country}`,
         placeholder: "Remove a role",
-        options: roles.map((id) => ({ label: id, value: id })),
+        options: roles.map((id) => ({ label: roleLabel(id, roleNames), value: id })),
       }))] : []),
       row(
         button({ custom_id: "setup:country-roles", label: "Pick different country" }),
@@ -147,7 +160,11 @@ export function countryRolesPanel(cfg: GuildConfig, country: string | undefined)
   };
 }
 
-export function govRolesPanel(cfg: GuildConfig, bucket: GovernmentBucket | undefined): PanelPayload {
+export function govRolesPanel(
+  ctx: PanelContext,
+  bucket: GovernmentBucket | undefined,
+): PanelPayload {
+  const { cfg, roleNames } = ctx;
   if (!bucket) {
     const lines = GOVERNMENT_BUCKETS.map((b) => {
       const list = cfg.governmentRoles?.[b];
@@ -159,7 +176,7 @@ export function govRolesPanel(cfg: GuildConfig, bucket: GovernmentBucket | undef
         title: "Government roles",
         description: lines.join("\n"),
         color: COLOR_PRIMARY,
-        footer: { text: "Assigned when a verified citizen holds a government position. Use 'Anyone in government' for a single catch-all role." },
+        footer: { text: "Tip: use 'Anyone in government' for a single @Cabinet role that applies to anyone holding any cabinet position." },
       }],
       components: [
         row(stringSelect({
@@ -175,21 +192,21 @@ export function govRolesPanel(cfg: GuildConfig, bucket: GovernmentBucket | undef
   const list = cfg.governmentRoles?.[bucket] ?? [];
   return {
     embeds: [{
-      title: `Government roles — ${GOVERNMENT_BUCKET_LABELS[bucket]}`,
+      title: `${GOVERNMENT_BUCKET_LABELS[bucket]} — assigned roles`,
       description: list.length === 0
-        ? "_No roles set yet._"
+        ? "_No roles set yet. Use the dropdown below to add one._"
         : list.map((id) => `• <@&${id}>`).join("\n"),
       color: COLOR_PRIMARY,
     }],
     components: [
       row(roleSelect({
         custom_id: `setup:gov-role:add:${bucket}`,
-        placeholder: "Add a role to this position",
+        placeholder: `Add a role for ${GOVERNMENT_BUCKET_LABELS[bucket]}`,
       })),
       ...(list.length > 0 ? [row(stringSelect({
         custom_id: `setup:gov-role:remove:${bucket}`,
         placeholder: "Remove a role",
-        options: list.map((id) => ({ label: id, value: id })),
+        options: list.map((id) => ({ label: roleLabel(id, roleNames), value: id })),
       }))] : []),
       row(
         button({ custom_id: "setup:gov-roles", label: "Pick different position" }),
@@ -199,38 +216,45 @@ export function govRolesPanel(cfg: GuildConfig, bucket: GovernmentBucket | undef
   };
 }
 
-export function foreignGovPanel(cfg: GuildConfig, country: string | undefined): PanelPayload {
+export function foreignGovPanel(
+  ctx: PanelContext,
+  country: string | undefined,
+): PanelPayload {
+  const { cfg, roleNames } = ctx;
   if (!country) {
     const countries = Object.keys(cfg.foreignCountryRoles ?? {}).sort();
     const lines = [
-      `Foreign government bypass: **${cfg.allowForeignGovernment ? "enabled" : "disabled"}**.`,
+      `Foreign government bypass is currently **${cfg.allowForeignGovernment ? "on" : "off"}**.`,
+      "",
+      cfg.allowForeignGovernment
+        ? "When on, cabinet members from other countries can verify here even if their country isn't in your allow-list."
+        : "When off, only people from your allowed countries can verify. Turn it on if you want embassy roles.",
       "",
       countries.length === 0
-        ? "_No foreign country roles configured. When the bypass is enabled, foreign gov members will verify but get only the base verified role until you add per-country roles here._"
-        : countries.map((c) => {
+        ? "_No per-country roles configured yet._"
+        : `Country roles configured:\n${countries.map((c) => {
             const roles = cfg.foreignCountryRoles?.[c] ?? [];
             return `**${c}**: ${roles.map((id) => `<@&${id}>`).join(", ")}`;
-          }).join("\n"),
+          }).join("\n")}`,
     ];
     return {
       embeds: [{
-        title: "Foreign government bypass",
+        title: "Foreign government",
         description: lines.join("\n"),
         color: COLOR_PRIMARY,
-        footer: { text: "Lets people in another country's government verify even if their country isn't in your allowed list." },
       }],
       components: [
         row(
           button({
             custom_id: "setup:foreign-gov:toggle",
-            label: cfg.allowForeignGovernment ? "Disable bypass" : "Enable bypass",
+            label: cfg.allowForeignGovernment ? "Turn bypass off" : "Turn bypass on",
             style: cfg.allowForeignGovernment ? ButtonStyle.Danger : ButtonStyle.Success,
           }),
-          button({ custom_id: "setup:foreign-gov:add-country", label: "Add foreign country", style: ButtonStyle.Success, emoji: "➕" }),
+          button({ custom_id: "setup:foreign-gov:add-country", label: "Add country", style: ButtonStyle.Success, emoji: "➕" }),
         ),
         ...(countries.length > 0 ? [row(stringSelect({
           custom_id: "setup:foreign-gov:pick",
-          placeholder: "Pick a country to manage",
+          placeholder: "Manage a country",
           options: countries.map((c) => ({ label: c, value: c })),
         }))] : []),
         row(button({ custom_id: "setup:back", label: "← Back" })),
@@ -241,21 +265,21 @@ export function foreignGovPanel(cfg: GuildConfig, country: string | undefined): 
   const roles = cfg.foreignCountryRoles?.[country] ?? [];
   return {
     embeds: [{
-      title: `Foreign country roles — ${country}`,
+      title: `${country} — foreign government roles`,
       description: roles.length === 0
-        ? "_No roles set for this country yet._"
+        ? `_No roles set for ${country} yet. Add one below to give cabinet members from this country a role._`
         : roles.map((id) => `• <@&${id}>`).join("\n"),
       color: COLOR_PRIMARY,
     }],
     components: [
       row(roleSelect({
         custom_id: `setup:foreign-gov:add-role:${country}`,
-        placeholder: "Add a role for foreign gov members from this country",
+        placeholder: `Add a role for cabinet members from ${country}`,
       })),
       ...(roles.length > 0 ? [row(stringSelect({
         custom_id: `setup:foreign-gov:remove-role:${country}`,
         placeholder: "Remove a role",
-        options: roles.map((id) => ({ label: id, value: id })),
+        options: roles.map((id) => ({ label: roleLabel(id, roleNames), value: id })),
       }))] : []),
       row(
         button({ custom_id: "setup:foreign-gov", label: "Pick different country" }),
@@ -265,12 +289,12 @@ export function foreignGovPanel(cfg: GuildConfig, country: string | undefined): 
   };
 }
 
-export function renderPanel(kind: PanelKind, cfg: GuildConfig): PanelPayload {
+export function renderPanel(kind: PanelKind, ctx: PanelContext): PanelPayload {
   switch (kind.kind) {
-    case "main": return mainPanel(cfg);
-    case "countries": return countriesPanel(cfg);
-    case "country-roles": return countryRolesPanel(cfg, kind.country);
-    case "gov-roles": return govRolesPanel(cfg, kind.bucket);
-    case "foreign-gov": return foreignGovPanel(cfg, kind.country);
+    case "main": return mainPanel(ctx.cfg);
+    case "countries": return countriesPanel(ctx.cfg);
+    case "country-roles": return countryRolesPanel(ctx, kind.country);
+    case "gov-roles": return govRolesPanel(ctx, kind.bucket);
+    case "foreign-gov": return foreignGovPanel(ctx, kind.country);
   }
 }

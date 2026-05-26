@@ -118,15 +118,13 @@ export async function runConfigPostWelcome(args: CommonArgs & { channelId: strin
     return;
   }
   const allowed = cfg.allowedCountries ?? [];
-  const restriction = allowed.length > 0
-    ? `\n\nThis server verifies citizens of: **${allowed.join(", ")}**.`
+  const description = allowed.length > 0
+    ? `For citizens of: **${allowed.join(", ")}**.`
     : "";
   const payload = {
     embeds: [{
       title: "Verify your War Era account",
-      description:
-        "Click below to link your War Era account to Discord. Takes a minute and proves ownership cryptographically. No screenshots, no mod approval."
-        + restriction,
+      description,
       color: 0xc8821e,
     }],
     components: [{
@@ -136,7 +134,6 @@ export async function runConfigPostWelcome(args: CommonArgs & { channelId: strin
         style: 1,
         label: "Verify",
         custom_id: "verify:start",
-        emoji: { name: "🔗" },
       }],
     }],
   };

@@ -1,0 +1,23 @@
+name = "warera-discord-verify-bot"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Replace these placeholder IDs after running:
+#   wrangler kv:namespace create TOKENS
+#   wrangler kv:namespace create LINKS
+#   wrangler kv:namespace create GUILDS
+kv_namespaces = [
+  { binding = "TOKENS", id = "004056992c1f4d7689f146343521b894" },
+  { binding = "LINKS",  id = "aed528094ff04e4da51ff4985257a4d5" },
+  { binding = "GUILDS", id = "8e0967c4091c42e1b856b711bbe17ecb" },
+]
+
+# Secrets (set via `wrangler secret put NAME`):
+#   DISCORD_PUBLIC_KEY    - Ed25519 public key from Discord application config
+#   DISCORD_APP_ID        - Application ID
+#   DISCORD_BOT_TOKEN     - Bot token (for REST calls: role assignment, follow-ups)
+
+# Plain vars (safe in source):
+[vars]
+TOKEN_TTL_SECONDS = "900"

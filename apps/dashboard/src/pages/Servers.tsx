@@ -80,6 +80,7 @@ export function Servers() {
 
 function ServerCard({ guild, installUrl }: { guild: GuildSummary; installUrl: string }) {
   const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=128` : null;
+  const guildInstallUrl = `${installUrl}&guild_id=${guild.id}&disable_guild_select=true`;
   return (
     <Panel>
       <div className="flex items-start gap-3">
@@ -105,10 +106,10 @@ function ServerCard({ guild, installUrl }: { guild: GuildSummary; installUrl: st
           </Link>
         ) : (
           <a
-            href={installUrl}
+            href={guildInstallUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-[11px] uppercase tracking-wider text-text-faint hover:text-accent"
+            className="font-mono text-[11px] uppercase tracking-wider text-accent hover:underline"
           >
             Install bot →
           </a>

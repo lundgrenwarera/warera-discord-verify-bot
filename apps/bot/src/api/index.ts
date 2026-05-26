@@ -4,12 +4,20 @@ import { z } from "zod";
 import type { Env, GuildConfig } from "../types";
 import { GOVERNMENT_BUCKETS } from "../types";
 import {
-  computeManagerGuildIds, exchangeOAuthCode, fetchOAuthGuilds, fetchOAuthUser,
-  issueSession, pickAdminGuildIds, verifySession, type SessionPayload,
+  cacheUserGuilds, computeManagerGuildIds, exchangeOAuthCode, fetchOAuthGuilds, fetchOAuthUser,
+  getCachedUserGuilds, issueSession, pickAdminGuildIds, verifySession, type SessionPayload,
 } from "./auth";
 import { buildMembersView } from "./members";
 import { fetchGuildRoles, sendChannelMessage } from "../lib/discord";
-import { fetchGovernment, getCountryName, getCountryNames, resolveUsername } from "../lib/warera-api";
+import { fetchGovernment, fetchUserById, getCountryName, getCountryNames, resolveUsername } from "../lib/warera-api";
+
+async function fetchUserByIdSafe(id: string) {
+  try {
+    return await fetchUserById(id);
+  } catch {
+    return null;
+  }
+}
 import { normalizeConfig, decideVerification, rolesForCitizen, rolesForForeignGov } from "../lib/config";
 import { governmentRolesFor, positionsHeldBy } from "../lib/government";
 import { isAdmin, parsePermissions } from "../lib/permissions";
@@ -62,6 +70,7 @@ export function buildApi(): Hono<AppEnv> {
       adminGuildIds: adminIds,
       managerGuildIds: managerIds,
     };
+    await cacheUserGuilds(c.env, user.id, guilds.map((g) => ({ id: g.id, name: g.name, icon: g.icon })));
     const sessionToken = await issueSession(c.env, payload);
     return c.json({ token: sessionToken });
   });
@@ -81,21 +90,24 @@ export function buildApi(): Hono<AppEnv> {
   app.get("/api/me/guilds", async (c) => {
     const session = c.var.session;
     const allIds = Array.from(new Set([...session.adminGuildIds, ...session.managerGuildIds]));
-    const installedChecks = await Promise.all(allIds.map(async (id) => {
-      const installed = await c.env.GUILDS.get(`g:${id}`) !== null;
-      return [id, installed] as const;
-    }));
-    const installedSet = new Map(installedChecks);
+    const cached = await getCachedUserGuilds(c.env, session.userId);
+    const cachedMap = new Map(cached.map((g) => [g.id, g]));
 
     const guilds = await Promise.all(allIds.map(async (id) => {
-      const g = await fetch(`https://discord.com/api/v10/guilds/${id}?with_counts=false`, {
+      const r = await fetch(`https://discord.com/api/v10/guilds/${id}?with_counts=false`, {
         headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}` },
       });
-      if (g.ok) {
-        const data = await g.json() as { id: string; name: string; icon: string | null };
+      if (r.ok) {
+        const data = await r.json() as { id: string; name: string; icon: string | null };
         return { id: data.id, name: data.name, icon: data.icon, botInstalled: true };
       }
-      return { id, name: id, icon: null, botInstalled: installedSet.get(id) ?? false };
+      const fallback = cachedMap.get(id);
+      return {
+        id,
+        name: fallback?.name ?? id,
+        icon: fallback?.icon ?? null,
+        botInstalled: false,
+      };
     }));
     return c.json({ guilds });
   });
@@ -181,10 +193,22 @@ export function buildApi(): Hono<AppEnv> {
 
   app.post("/api/guilds/:guildId/manual-verify", async (c) => {
     const guildId = c.req.param("guildId");
-    const body = await c.req.json().catch(() => null) as { discordUserId?: string; wareraUsername?: string } | null;
-    if (!body?.discordUserId || !body?.wareraUsername) return c.json({ error: "missing inputs" }, 400);
+    const body = await c.req.json().catch(() => null) as {
+      discordUserId?: string;
+      wareraUsername?: string;
+      wareraUserId?: string;
+    } | null;
+    if (!body?.discordUserId || (!body?.wareraUsername && !body?.wareraUserId)) {
+      return c.json({ error: "missing inputs" }, 400);
+    }
 
-    const user = await resolveUsername(body.wareraUsername);
+    let user;
+    if (body.wareraUserId) {
+      try { user = await fetchUserByIdSafe(body.wareraUserId); }
+      catch { user = null; }
+    } else {
+      user = await resolveUsername(body.wareraUsername!);
+    }
     if (!user) return c.json({ error: "no such War Era user" }, 404);
 
     const existing = await c.env.LINKS.get(`d:${body.discordUserId}`);
@@ -251,8 +275,13 @@ export function buildApi(): Hono<AppEnv> {
 
   app.get("/api/guilds/:guildId/members", async (c) => {
     const guildId = c.req.param("guildId");
-    const rows = await buildMembersView(c.env, guildId);
-    return c.json({ members: rows });
+    try {
+      const rows = await buildMembersView(c.env, guildId);
+      return c.json({ members: rows });
+    } catch (e) {
+      console.error("members endpoint failed:", e);
+      return c.json({ error: `members fetch failed: ${(e as Error).message ?? e}` }, 500);
+    }
   });
 
   return app;

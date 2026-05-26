@@ -71,7 +71,7 @@ export function Members() {
   };
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+    <section className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
       <div>
         <div className="flex items-center gap-3">
           <Link to={`/servers/${guildId}`} className="label hover:text-text">← Server config</Link>
@@ -200,7 +200,14 @@ function Row({
         <td className="py-3 pr-3">
           {row.linked ? (
             <div>
-              <div className="text-sm text-text">{row.wareraUsername}</div>
+              <a
+                href={`https://app.warera.io/user/${row.wareraUserId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-accent hover:underline"
+              >
+                {row.wareraUsername} ↗
+              </a>
               <div className="font-mono text-[10px] text-text-faint">linked</div>
             </div>
           ) : (
@@ -233,6 +240,7 @@ function Row({
             {row.flags.countryChanged && <Tag color="warn">country</Tag>}
             {row.flags.govRoleStale && <Tag color="warn">gov stale</Tag>}
             {row.flags.belowMinLevel && <Tag color="warn">level</Tag>}
+            {row.flags.usernameMismatch && <Tag color="warn">name?</Tag>}
             {!row.linked && row.flags.hasAnyTrackedRole && <Tag color="loss">orphan</Tag>}
           </div>
         </td>
@@ -290,5 +298,9 @@ function Tag({ color, children }: { color: "ok" | "warn" | "loss" | "accent"; ch
 }
 
 function hasIssue(r: MemberRow): boolean {
-  return r.flags.countryChanged || r.flags.belowMinLevel || r.flags.govRoleStale || (!r.linked && r.flags.hasAnyTrackedRole);
+  return r.flags.countryChanged
+    || r.flags.belowMinLevel
+    || r.flags.govRoleStale
+    || r.flags.usernameMismatch
+    || (!r.linked && r.flags.hasAnyTrackedRole);
 }

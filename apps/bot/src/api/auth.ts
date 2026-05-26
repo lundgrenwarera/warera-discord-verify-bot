@@ -11,6 +11,21 @@ export interface SessionPayload {
   managerGuildIds: string[];
 }
 
+export interface CachedGuildInfo {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
+export async function cacheUserGuilds(env: Env, userId: string, guilds: CachedGuildInfo[]): Promise<void> {
+  await env.GUILDS.put(`uguilds:${userId}`, JSON.stringify(guilds), { expirationTtl: 60 * 60 });
+}
+
+export async function getCachedUserGuilds(env: Env, userId: string): Promise<CachedGuildInfo[]> {
+  const raw = await env.GUILDS.get(`uguilds:${userId}`, "json") as CachedGuildInfo[] | null;
+  return raw ?? [];
+}
+
 interface DiscordTokenResponse {
   access_token: string;
   token_type: string;

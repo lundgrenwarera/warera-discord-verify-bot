@@ -67,6 +67,7 @@ export interface MemberRow {
     countryChanged: boolean;
     belowMinLevel: boolean;
     govRoleStale: boolean;
+    usernameMismatch: boolean;
   };
 }
 
@@ -86,8 +87,19 @@ export const api = {
   guildChannels: (guildId: string) =>
     request<{ channels: Array<{ id: string; name: string; type: number }> }>(`/api/guilds/${guildId}/channels`),
   countries: () => request<{ countries: string[] }>("/api/warera/countries"),
-  manualVerify: (guildId: string, discordUserId: string, wareraUsername: string) =>
-    request<{ ok: true; assigned: number; total: number }>(`/api/guilds/${guildId}/manual-verify`, {
-      method: "POST", body: JSON.stringify({ discordUserId, wareraUsername }),
-    }),
+  manualVerify: (guildId: string, discordUserId: string, input: string) => {
+    const wareraUserId = extractWareraUserId(input);
+    const payload: Record<string, string> = { discordUserId };
+    if (wareraUserId) payload.wareraUserId = wareraUserId;
+    else payload.wareraUsername = input.trim();
+    return request<{ ok: true; assigned: number; total: number }>(`/api/guilds/${guildId}/manual-verify`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+  },
 };
+
+function extractWareraUserId(input: string): string | null {
+  const s = input.trim();
+  const m = s.match(/(?:app\.warera\.io\/user\/|^)([a-f0-9]{24})$/i);
+  return m?.[1] ?? null;
+}

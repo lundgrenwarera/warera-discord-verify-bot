@@ -28,6 +28,7 @@ export interface MemberRow {
     countryChanged: boolean;
     belowMinLevel: boolean;
     govRoleStale: boolean;
+    usernameMismatch: boolean;
   };
 }
 
@@ -125,6 +126,14 @@ export async function buildMembersView(env: Env, guildId: string): Promise<Membe
     const actualPositions = state?.positions ?? [];
     const govRoleStale = expectedPositions.some((p) => p !== "any" && !actualPositions.includes(p));
 
+    const candidates = [m.user.username, m.user.global_name, m.nick]
+      .filter((s): s is string => !!s)
+      .map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const wareraNormalized = link?.wareraUsername?.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const usernameMismatch = !!link && !!wareraNormalized && !candidates.some(
+      (c) => c === wareraNormalized || c.includes(wareraNormalized) || wareraNormalized.includes(c),
+    );
+
     rows.push({
       discordUserId: m.user.id,
       username: m.nick || m.user.global_name || m.user.username,
@@ -143,6 +152,7 @@ export async function buildMembersView(env: Env, guildId: string): Promise<Membe
         countryChanged: !!link?.country && !!state?.country && link.country !== state.country,
         belowMinLevel: !!cfg.minLevel && typeof state?.level === "number" && state.level < cfg.minLevel,
         govRoleStale,
+        usernameMismatch,
       },
     });
   }

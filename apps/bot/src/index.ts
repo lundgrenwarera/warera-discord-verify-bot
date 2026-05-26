@@ -5,6 +5,7 @@ import type {
   APIModalSubmitInteraction,
 } from "discord-api-types/v10";
 import { buildApi } from "./api";
+import { handleWebhookEvent } from "./handlers/install-event";
 import { verifySignature } from "./lib/discord";
 import { consume, LIMITS } from "./lib/rate-limit";
 import { runVerifyStart } from "./handlers/verify";
@@ -43,6 +44,16 @@ export default {
     const ts = req.headers.get("x-signature-timestamp");
     const ok = await verifySignature(env.DISCORD_PUBLIC_KEY, body, sig, ts);
     if (!ok) return new Response("bad signature", { status: 401 });
+
+    if (url.pathname === "/discord/events") {
+      const payload = JSON.parse(body);
+      if (payload.type === 0) return new Response(null, { status: 204 });
+      if (payload.type === 1) {
+        ctx.waitUntil(handleWebhookEvent(env, payload).catch((e) => console.error("webhook event failed:", e)));
+        return new Response(null, { status: 204 });
+      }
+      return new Response("unhandled webhook type", { status: 400 });
+    }
 
     const interaction = JSON.parse(body);
 

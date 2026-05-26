@@ -94,3 +94,8 @@ async function getCountryMap(kv: KVNamespace): Promise<Map<string, string>> {
   await kv.put(COUNTRY_CACHE_KEY, JSON.stringify(entries), { expirationTtl: COUNTRY_CACHE_TTL });
   return new Map(entries);
 }
+
+export async function getCountryNames(kv: KVNamespace): Promise<string[]> {
+  const map = await getCountryMap(kv);
+  return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+}

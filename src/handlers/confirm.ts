@@ -3,6 +3,8 @@ import { addRoleToMember, editOriginalResponse } from "../lib/discord";
 import { consume, LIMITS } from "../lib/rate-limit";
 import { fetchCompanies, fetchUserById, getCountryName, WareraApiError } from "../lib/warera-api";
 
+const FOOTER = "-# bot by [lundgren](https://app.warera.io/user/6a146313f0de273b8b1c27f6)";
+
 export async function runVerifyConfirm(args: {
   env: Env;
   interactionToken: string;
@@ -41,9 +43,9 @@ export async function runVerifyConfirm(args: {
   const match = companies.find((c) => (c.name ?? "").toLowerCase().includes(tokenLower));
   if (!match) {
     await editFn([
-      `No factory named with the token \`${pending.token}\` found on **${pending.wareraUsername}**.`,
+      `No company named with the token \`${pending.token}\` found on **${pending.wareraUsername}**.`,
       "",
-      "Make sure the factory was saved with the token in its name, then click Confirm again.",
+      "Rename one of your companies to include the token, save, then click Confirm again.",
     ].join("\n"));
     return;
   }
@@ -58,15 +60,18 @@ export async function runVerifyConfirm(args: {
   const countryName = await getCountryName(args.env.LINKS, countryId);
 
   const cfg = await args.env.GUILDS.get(`g:${args.guildId}`, "json") as GuildConfig | null;
-  const countryRestrict = cfg?.countryRoles && Object.keys(cfg.countryRoles).length > 0;
-  if (countryRestrict) {
+  if (!cfg?.verifiedRoleId) {
+    await editFn("This server hasn't finished setup yet. An admin needs to run `/verify-config set-verified-role` first.");
+    return;
+  }
+  const allowed = cfg.allowedCountries ?? [];
+  if (allowed.length > 0) {
     if (!countryName) {
       await editFn("Couldn't read your War Era country, so this country-restricted server can't verify you. Try again in a few minutes.");
       return;
     }
-    if (!cfg!.countryRoles![countryName]) {
-      const allowed = Object.keys(cfg!.countryRoles!).join(", ");
-      await editFn(`This server only verifies citizens of: **${allowed}**. Your War Era account shows country **${countryName}**, which isn't on the list. If that's a mistake, contact a server moderator.`);
+    if (!allowed.includes(countryName)) {
+      await editFn(`This server only verifies citizens of: **${allowed.join(", ")}**. Your War Era account shows country **${countryName}**, which isn't allowed. If that's a mistake, contact a server moderator.`);
       return;
     }
   }
@@ -84,36 +89,31 @@ export async function runVerifyConfirm(args: {
     args.env.TOKENS.delete(`p:${args.discordUserId}`),
   ]);
 
-  const roleResults: string[] = [];
-  if (cfg?.verifiedRoleId) {
+  const rolesToAssign: string[] = [];
+  if (cfg?.verifiedRoleId) rolesToAssign.push(cfg.verifiedRoleId);
+  if (cfg?.countryRoles && countryName) {
+    const extras = cfg.countryRoles[countryName];
+    if (Array.isArray(extras)) rolesToAssign.push(...extras);
+  }
+
+  let anyAssignFailed = false;
+  for (const roleId of rolesToAssign) {
     const res = await addRoleToMember({
       botToken: args.env.DISCORD_BOT_TOKEN,
       guildId: args.guildId,
       userId: args.discordUserId,
-      roleId: cfg.verifiedRoleId,
+      roleId,
     });
-    roleResults.push(res.ok ? "Verified role assigned." : `Couldn't assign verified role (Discord ${res.status}). A mod can fix the role permissions.`);
-  }
-  if (cfg?.countryRoles && countryName) {
-    const roleId = cfg.countryRoles[countryName];
-    if (roleId) {
-      const res = await addRoleToMember({
-        botToken: args.env.DISCORD_BOT_TOKEN,
-        guildId: args.guildId,
-        userId: args.discordUserId,
-        roleId,
-      });
-      roleResults.push(res.ok ? `${countryName} role assigned.` : `Couldn't assign ${countryName} role (Discord ${res.status}).`);
-    }
+    if (!res.ok) anyAssignFailed = true;
   }
 
-  const lines = [
-    `✓ Verified as **${pending.wareraUsername}** (via factory \`${match.name}\`).`,
-    countryName ? `Country on file: **${countryName}**.` : null,
-    ...roleResults,
-    "",
-    "You can rename the factory back to whatever you like now.",
-  ].filter(Boolean);
+  const lines = ["✓ Verified."];
+  if (anyAssignFailed) {
+    lines.push("");
+    lines.push("Heads up: the bot couldn't assign one of your roles. Ask a mod to drag the **WarEra** bot role above the verified/country roles in *Server Settings → Roles*.");
+  }
+  lines.push("");
+  lines.push(FOOTER);
   await editFn(lines.join("\n"));
 }
 

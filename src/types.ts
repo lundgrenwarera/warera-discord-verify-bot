@@ -25,10 +25,10 @@ export interface Link {
 }
 
 export interface GuildConfig {
-  /** Role assigned to everyone who verifies, regardless of country. */
+  /** Role assigned to everyone who passes verification. */
   verifiedRoleId?: string;
-  /** Per-country role assignments. When this map is non-empty, the country
-   * filter is active: only members from listed countries may verify. Each
-   * country can map to multiple roles. */
+  /** If set, only these War Era countries are allowed to verify. */
+  allowedCountries?: string[];
+  /** Extra per-country role assignments (in addition to verifiedRoleId). */
   countryRoles?: Record<string, string[]>;
 }

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const commands = [
   {
@@ -17,13 +17,43 @@ const commands = [
     ],
   },
   {
-    name: "verify-setup",
-    description: "Configure this server (admins only)",
+    name: "verify-config",
+    description: "Configure verification for this server (admins only)",
     default_member_permissions: "8",
     options: [
-      { type: 8, name: "verified_role", description: "Role to assign on successful verification", required: true },
-      { type: 3, name: "country", description: "Single War Era country to restrict verification to (e.g. Netherlands)" },
-      { type: 3, name: "country_roles", description: "JSON map of country → role ID for multi-country servers (advanced)" },
+      { type: 1, name: "show", description: "Show current configuration" },
+      {
+        type: 1, name: "set-verified-role",
+        description: "Set the role assigned to everyone who verifies",
+        options: [{ type: 8, name: "role", description: "Role to assign", required: true }],
+      },
+      {
+        type: 1, name: "allow-country",
+        description: "Allow verification from this War Era country (omit any to allow all)",
+        options: [{ type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true }],
+      },
+      {
+        type: 1, name: "disallow-country",
+        description: "Stop allowing verification from this country",
+        options: [{ type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true }],
+      },
+      {
+        type: 1, name: "add-country-role",
+        description: "Give an extra role to verifications from a specific country",
+        options: [
+          { type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true },
+          { type: 8, name: "role", description: "Extra role to assign", required: true },
+        ],
+      },
+      {
+        type: 1, name: "remove-country-role",
+        description: "Remove a country-specific role mapping",
+        options: [
+          { type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true },
+          { type: 8, name: "role", description: "Role to remove from this country", required: true },
+        ],
+      },
+      { type: 1, name: "reset", description: "Wipe all verification config for this server" },
     ],
   },
   {
@@ -35,17 +65,18 @@ const commands = [
   },
 ];
 
-const envFile = readFileSync(".dev.vars", "utf8");
-const env: Record<string, string> = {};
-for (const line of envFile.split("\n")) {
-  const m = line.match(/^([A-Z_]+)\s*=\s*"?([^"]*)"?$/);
-  if (m) env[m[1]] = m[2];
+const env: Record<string, string> = { ...process.env } as Record<string, string>;
+if (existsSync(".dev.vars")) {
+  for (const line of readFileSync(".dev.vars", "utf8").split("\n")) {
+    const m = line.match(/^([A-Z_]+)\s*=\s*"?([^"]*)"?$/);
+    if (m && !env[m[1]]) env[m[1]] = m[2];
+  }
 }
 
 const appId = env.DISCORD_APP_ID;
 const token = env.DISCORD_BOT_TOKEN;
 if (!appId || !token) {
-  console.error("Missing DISCORD_APP_ID or DISCORD_BOT_TOKEN in .dev.vars");
+  console.error("Missing DISCORD_APP_ID or DISCORD_BOT_TOKEN. Set via env vars or .dev.vars.");
   process.exit(1);
 }
 

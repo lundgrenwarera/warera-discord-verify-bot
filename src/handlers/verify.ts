@@ -65,7 +65,7 @@ export async function runVerifyStart(args: {
     return;
   }
   if (companies.length === 0) {
-    await editFn("You need at least one factory to verify. Build a factory in War Era and try again.");
+    await editFn("You need at least one company to verify. Build one in War Era and try again.");
     return;
   }
 
@@ -83,13 +83,12 @@ export async function runVerifyStart(args: {
 
   const minutes = Math.floor(ttl / 60);
   const content = [
-    `**Verification started for ${user.username}.**`,
+    `**Verifying ${user.username}.** Within ${minutes} min:`,
     "",
-    "1. Open War Era → Companies",
-    `2. Rename **any one** of your factories to: \`${token}\``,
-    "3. Click **Confirm** below within " + minutes + " minutes",
+    `1. War Era → Companies → rename any one of your companies to **\`${token}\`**`,
+    "2. Click **Confirm** below.",
     "",
-    "Once confirmed you can rename the factory back to whatever you like.",
+    "You can rename the company back after confirming.",
   ].join("\n");
 
   await editFn(content, [

@@ -62,9 +62,11 @@ export async function runVerifyConfirm(args: {
   }
 
   let countryId: string | undefined;
+  let userLevel: number | undefined;
   try {
     const user = await fetchUserById(pending.wareraUserId);
     countryId = user.country;
+    userLevel = user.leveling?.level;
   } catch { /* best-effort */ }
   const countryName = await getCountryName(args.env.LINKS, countryId);
 
@@ -94,8 +96,8 @@ export async function runVerifyConfirm(args: {
   }
 
   const baseRoles = decision.mode === "citizen"
-    ? rolesForCitizen(cfg, countryName)
-    : rolesForForeignGov(cfg, countryName!);
+    ? rolesForCitizen(cfg, countryName, userLevel)
+    : rolesForForeignGov(cfg, countryName!, userLevel);
   const govRoles = decision.mode === "citizen" ? governmentRolesFor(cfg, positions) : [];
   const allRoles = Array.from(new Set([...baseRoles, ...govRoles]));
 

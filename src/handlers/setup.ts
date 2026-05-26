@@ -8,7 +8,7 @@ import { GOVERNMENT_BUCKETS } from "../types";
 import {
   addAllowedCountry, addCountryRole, addForeignCountryRole, addGovernmentRole,
   normalizeConfig, removeAllowedCountry, removeCountryRole, removeForeignCountryRole,
-  removeGovernmentRole, renderConfig, setAllowForeignGovernment,
+  removeGovernmentRole, renderConfig, setAllowForeignGovernment, setMinLevel,
 } from "../lib/config";
 import { isAdmin } from "../lib/permissions";
 import { messages } from "../lib/messages";
@@ -145,6 +145,11 @@ export async function handleSetupComponent(
   if (id === "setup:reset") {
     await env.GUILDS.delete(KEY(ctx.guildId));
     return renderTo(ctx, { kind: "main" });
+  }
+
+  if (id === "setup:min-level") {
+    const cfg = await load(env, ctx.guildId);
+    return { openModal: minLevelModal(cfg.minLevel) };
   }
 
   if (id === "setup:post-welcome") return postWelcome(ctx);
@@ -305,6 +310,21 @@ export async function handleSetupModal(
     if (!country) return showAck(ctx, `Unknown country: **${value}**.`);
     return renderTo(ctx, { kind: "foreign-gov", country });
   }
+
+  if (customId === "setup_modal:min-level") {
+    const raw = extractModalValue(interaction, "level").trim();
+    const cfg = await load(env, ctx.guildId);
+    if (raw === "" || raw === "0") {
+      await save(env, ctx.guildId, setMinLevel(cfg, undefined));
+      return renderTo(ctx, { kind: "main" });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 1 || n > 200) {
+      return showAck(ctx, `**${raw}** isn't a valid level. Use a number between 1 and 200, or leave blank to remove the gate.`);
+    }
+    await save(env, ctx.guildId, setMinLevel(cfg, n));
+    return renderTo(ctx, { kind: "main" });
+  }
 }
 
 async function resolveCountryName(env: Env, input: string): Promise<string | null> {
@@ -348,6 +368,21 @@ function pickCountryModal(customId: string) {
       label: "Country name (exact War Era name)",
       placeholder: "e.g. Portugal",
       max_length: 64,
+    })],
+  });
+}
+
+function minLevelModal(current: number | undefined) {
+  return modal({
+    custom_id: "setup_modal:min-level",
+    title: "Minimum level for country roles",
+    inputs: [textInput({
+      custom_id: "level",
+      label: "Minimum level (blank or 0 to disable)",
+      placeholder: "e.g. 10",
+      max_length: 3,
+      required: false,
+      value: current ? String(current) : undefined,
     })],
   });
 }
@@ -411,6 +446,10 @@ export async function preflightSetupModal(
   }
   if (customId === "setup:foreign-gov:add-country") {
     return pickCountryModal("setup_modal:foreign-gov-country");
+  }
+  if (customId === "setup:min-level") {
+    const cfg = await load(env, guildId);
+    return minLevelModal(cfg.minLevel);
   }
   return null;
 }

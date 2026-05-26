@@ -3,7 +3,7 @@ import {
   addAllowedCountry, addCountryRole, addForeignCountryRole, addGovernmentRole,
   decideVerification, normalizeConfig, removeAllowedCountry, removeCountryRole,
   removeForeignCountryRole, removeGovernmentRole, renderConfig,
-  rolesForCitizen, rolesForForeignGov, setAllowForeignGovernment,
+  rolesForCitizen, rolesForForeignGov, setAllowForeignGovernment, setMinLevel,
 } from "../src/lib/config";
 
 describe("normalizeConfig", () => {
@@ -160,30 +160,77 @@ describe("decideVerification", () => {
 
 describe("rolesForCitizen", () => {
   it("always includes verified role", () => {
-    expect(rolesForCitizen({ verifiedRoleId: "v" }, null)).toEqual(["v"]);
-    expect(rolesForCitizen({ verifiedRoleId: "v" }, "Sweden")).toEqual(["v"]);
+    expect(rolesForCitizen({ verifiedRoleId: "v" }, null, undefined)).toEqual(["v"]);
+    expect(rolesForCitizen({ verifiedRoleId: "v" }, "Sweden", undefined)).toEqual(["v"]);
   });
 
-  it("includes country-specific roles", () => {
+  it("includes country-specific roles when no level gate", () => {
     const cfg = { verifiedRoleId: "v", countryRoles: { Sweden: ["s1", "s2"] } };
-    expect(rolesForCitizen(cfg, "Sweden")).toEqual(["v", "s1", "s2"]);
-    expect(rolesForCitizen(cfg, "Norway")).toEqual(["v"]);
+    expect(rolesForCitizen(cfg, "Sweden", 1)).toEqual(["v", "s1", "s2"]);
+    expect(rolesForCitizen(cfg, "Norway", 1)).toEqual(["v"]);
   });
 
   it("dedupes verified+country overlap", () => {
     const cfg = { verifiedRoleId: "v", countryRoles: { Sweden: ["v", "s1"] } };
-    expect(rolesForCitizen(cfg, "Sweden")).toEqual(["v", "s1"]);
+    expect(rolesForCitizen(cfg, "Sweden", 1)).toEqual(["v", "s1"]);
+  });
+
+  it("withholds country roles when user is below minLevel", () => {
+    const cfg = { verifiedRoleId: "v", countryRoles: { Sweden: ["s1"] }, minLevel: 10 };
+    expect(rolesForCitizen(cfg, "Sweden", 5)).toEqual(["v"]);
+    expect(rolesForCitizen(cfg, "Sweden", 10)).toEqual(["v", "s1"]);
+    expect(rolesForCitizen(cfg, "Sweden", 99)).toEqual(["v", "s1"]);
+  });
+
+  it("withholds country roles when level is unknown and minLevel set", () => {
+    const cfg = { verifiedRoleId: "v", countryRoles: { Sweden: ["s1"] }, minLevel: 10 };
+    expect(rolesForCitizen(cfg, "Sweden", undefined)).toEqual(["v"]);
   });
 });
 
 describe("rolesForForeignGov", () => {
   it("includes verified + foreign country roles", () => {
     const cfg = { verifiedRoleId: "v", foreignCountryRoles: { Portugal: ["p1"] } };
-    expect(rolesForForeignGov(cfg, "Portugal")).toEqual(["v", "p1"]);
+    expect(rolesForForeignGov(cfg, "Portugal", 1)).toEqual(["v", "p1"]);
   });
 
   it("returns just verified if no per-country role", () => {
-    expect(rolesForForeignGov({ verifiedRoleId: "v" }, "Portugal")).toEqual(["v"]);
+    expect(rolesForForeignGov({ verifiedRoleId: "v" }, "Portugal", 1)).toEqual(["v"]);
+  });
+
+  it("withholds country roles when below minLevel", () => {
+    const cfg = { verifiedRoleId: "v", foreignCountryRoles: { Portugal: ["p1"] }, minLevel: 10 };
+    expect(rolesForForeignGov(cfg, "Portugal", 5)).toEqual(["v"]);
+    expect(rolesForForeignGov(cfg, "Portugal", 12)).toEqual(["v", "p1"]);
+  });
+});
+
+describe("setMinLevel", () => {
+  it("sets a positive integer", () => {
+    expect(setMinLevel({}, 10)).toEqual({ minLevel: 10 });
+  });
+
+  it("floors fractional input", () => {
+    expect(setMinLevel({}, 10.7).minLevel).toBe(10);
+  });
+
+  it("clears when given undefined / 0 / negative", () => {
+    expect(setMinLevel({ minLevel: 10 }, undefined).minLevel).toBeUndefined();
+    expect(setMinLevel({ minLevel: 10 }, 0).minLevel).toBeUndefined();
+    expect(setMinLevel({ minLevel: 10 }, -1).minLevel).toBeUndefined();
+  });
+});
+
+describe("normalize minLevel", () => {
+  it("accepts positive ints", () => {
+    expect(normalizeConfig({ minLevel: 10 }).minLevel).toBe(10);
+  });
+
+  it("rejects garbage", () => {
+    expect(normalizeConfig({ minLevel: "10" }).minLevel).toBeUndefined();
+    expect(normalizeConfig({ minLevel: 0 }).minLevel).toBeUndefined();
+    expect(normalizeConfig({ minLevel: -5 }).minLevel).toBeUndefined();
+    expect(normalizeConfig({ minLevel: NaN }).minLevel).toBeUndefined();
   });
 });
 

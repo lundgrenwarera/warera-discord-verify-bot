@@ -57,6 +57,7 @@ export interface GuildConfig {
   governmentRoles?: Partial<Record<GovernmentBucket, string[]>>;
   allowForeignGovernment?: boolean;
   foreignCountryRoles?: Record<string, string[]>;
+  minLevel?: number;
 }
 
 export interface Government {

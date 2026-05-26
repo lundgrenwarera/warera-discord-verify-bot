@@ -59,7 +59,25 @@ export function normalizeConfig(raw: unknown): GuildConfig {
   const foreign = normalizeStringRoleMap(obj.foreignCountryRoles);
   if (foreign) out.foreignCountryRoles = foreign;
 
+  if (typeof obj.minLevel === "number" && Number.isFinite(obj.minLevel) && obj.minLevel > 0) {
+    out.minLevel = Math.floor(obj.minLevel);
+  }
+
   return out;
+}
+
+export function setMinLevel(cfg: GuildConfig, level: number | undefined): GuildConfig {
+  if (level == null || level <= 0) {
+    const { minLevel: _, ...rest } = cfg;
+    return rest;
+  }
+  return { ...cfg, minLevel: Math.floor(level) };
+}
+
+export function meetsMinLevel(cfg: GuildConfig, level: number | undefined): boolean {
+  if (cfg.minLevel === undefined) return true;
+  if (level === undefined) return false;
+  return level >= cfg.minLevel;
 }
 
 export function addAllowedCountry(cfg: GuildConfig, country: string): GuildConfig {
@@ -127,19 +145,29 @@ export function decideVerification(args: {
   return { allowed: false, reason: "country-not-allowed" };
 }
 
-export function rolesForCitizen(cfg: GuildConfig, countryName: string | null): string[] {
+export function rolesForCitizen(
+  cfg: GuildConfig,
+  countryName: string | null,
+  level: number | undefined,
+): string[] {
   const out = new Set<string>();
   if (cfg.verifiedRoleId) out.add(cfg.verifiedRoleId);
-  if (countryName && cfg.countryRoles) {
+  if (meetsMinLevel(cfg, level) && countryName && cfg.countryRoles) {
     for (const id of cfg.countryRoles[countryName] ?? []) out.add(id);
   }
   return Array.from(out);
 }
 
-export function rolesForForeignGov(cfg: GuildConfig, countryName: string): string[] {
+export function rolesForForeignGov(
+  cfg: GuildConfig,
+  countryName: string,
+  level: number | undefined,
+): string[] {
   const out = new Set<string>();
   if (cfg.verifiedRoleId) out.add(cfg.verifiedRoleId);
-  for (const id of cfg.foreignCountryRoles?.[countryName] ?? []) out.add(id);
+  if (meetsMinLevel(cfg, level)) {
+    for (const id of cfg.foreignCountryRoles?.[countryName] ?? []) out.add(id);
+  }
   return Array.from(out);
 }
 

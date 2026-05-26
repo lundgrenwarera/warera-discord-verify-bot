@@ -21,6 +21,15 @@ const commands = [
       { type: 6, name: "user", description: "Discord user to unlink (admins only)" },
     ],
   },
+  {
+    name: "manual-verify",
+    description: "Manually verify a Discord user without the company-rename step (admins only)",
+    default_member_permissions: "8",
+    options: [
+      { type: 6, name: "user", description: "Discord user to verify", required: true },
+      { type: 3, name: "username", description: "Their War Era username", required: true },
+    ],
+  },
 ];
 
 const env: Record<string, string> = { ...process.env } as Record<string, string>;

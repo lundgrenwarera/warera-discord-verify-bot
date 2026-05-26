@@ -24,6 +24,7 @@ function statusEmbed(cfg: GuildConfig) {
     `${Object.keys(cfg.countryRoles ?? {}).length > 0 ? STATUS_OK : STATUS_OFF} **Country roles**: ${Object.keys(cfg.countryRoles ?? {}).length} configured`,
     `${Object.keys(cfg.governmentRoles ?? {}).length > 0 ? STATUS_OK : STATUS_OFF} **Government roles**: ${Object.keys(cfg.governmentRoles ?? {}).length} buckets`,
     `${cfg.allowForeignGovernment ? STATUS_OK : STATUS_OFF} **Foreign gov bypass**: ${cfg.allowForeignGovernment ? "enabled" : "disabled"} (${Object.keys(cfg.foreignCountryRoles ?? {}).length} countries)`,
+    `${cfg.minLevel ? STATUS_OK : STATUS_OFF} **Min level for country roles**: ${cfg.minLevel ? cfg.minLevel : "_none_"}`,
   ];
   return {
     title: "Verify Bot setup",
@@ -48,10 +49,11 @@ export function mainPanel(cfg: GuildConfig): PanelPayload {
       ),
       row(
         button({ custom_id: "setup:foreign-gov", label: "Foreign government", emoji: "🌐" }),
+        button({ custom_id: "setup:min-level", label: cfg.minLevel ? `Min level: ${cfg.minLevel}` : "Min level for country roles", emoji: "🎚️" }),
         button({ custom_id: "setup:post-welcome", label: "Post welcome here", style: ButtonStyle.Success, emoji: "📣", disabled: !cfg.verifiedRoleId }),
-        button({ custom_id: "setup:show-config", label: "Show raw config" }),
       ),
       row(
+        button({ custom_id: "setup:show-config", label: "Show raw config" }),
         button({ custom_id: "setup:reset", label: "Reset config", style: ButtonStyle.Danger, emoji: "🗑️" }),
       ),
     ],

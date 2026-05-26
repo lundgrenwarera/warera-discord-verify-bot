@@ -8,15 +8,16 @@ A Discord bot that verifies someone owns their War Era account by asking them to
 
 After installing, drag the **WarEra** bot role above any role you want it to assign (Server Settings → Roles), then run `/verify-setup`.
 
-## The three slash commands
+## The four slash commands
 
 | Command | Who | What it does |
 |---|---|---|
 | `/verify-setup` | Admins | Opens the interactive setup panel for the whole bot |
 | `/whois` | Mods | Look up the War Era account linked to a Discord user, or vice versa |
 | `/unverify` | Self / admins | Remove a verification link |
+| `/manual-verify` | Admins | Verify a user without the company-rename step (for permamuted accounts) |
 
-Everything else is buttons inside `/verify-setup`. There are no other slash commands.
+Everything else is buttons inside `/verify-setup`. The bot does not register any other slash commands.
 
 ## How a user verifies
 
@@ -37,7 +38,8 @@ The rename is the proof. Only the real account owner can rename their companies.
 3. **(Optional) Per-country roles.** Click *Country roles* to assign an extra role per allowed country, e.g. citizens of Sweden also get `@Sweden`.
 4. **(Optional) Government roles.** Click *Government roles* to assign roles when a verified user holds a cabinet position (President, VP, MoD, MoE, MoFA) in their country. Use the **Anyone in government** bucket for a single `@Cabinet` role across all positions.
 5. **(Optional) Foreign government bypass.** Click *Foreign government* to let people in another country's cabinet verify even if their country isn't in your allow-list. Useful for embassy servers. You can assign country-named roles like `@Portugal`.
-6. **Post the welcome message.** Click *Post welcome here* in the channel where you want the Verify button to live.
+6. **(Optional) Minimum level for country roles.** Click *Min level for country roles* to require War Era level N before the bot assigns country or foreign-country roles. The verified role and government roles still go through. This is the anti-multi-account gate — typical value is 10.
+7. **Post the welcome message.** Click *Post welcome here* in the channel where you want the Verify button to live.
 
 The panel is ephemeral (only you see it). Re-run `/verify-setup` any time to see the current state and make changes.
 
@@ -55,6 +57,23 @@ The panel is ephemeral (only you see it). Re-run `/verify-setup` any time to see
 8. Run `/verify-setup` again in the channel where new members land. Click *Post welcome here*.
 
 Result: Swedes get `@Verified` + `@Swede` (+ `@Cabinet`/`@President` if they're in the cabinet). Portuguese cabinet members can also verify and get `@Verified` + `@Portugal`.
+
+## Manual verification (for permamuted accounts)
+
+If a user is permamuted in War Era they can't rename companies, which means the normal Verify button flow can't work for them. As an admin you can verify them by hand:
+
+```
+/manual-verify user:@SomeMember username:TheirWarEraUsername
+```
+
+This skips the company-rename step but still:
+
+- Checks the War Era account exists
+- Refuses if either side is already linked (use `/unverify` first to relink)
+- Applies the server's country and government rules (allowed countries, role assignments, minimum-level gate)
+- Audit-logs the role assignments
+
+It's a deliberate trust-the-admin escape hatch. Use it sparingly.
 
 ## Rate limits
 

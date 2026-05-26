@@ -10,6 +10,7 @@ import { runVerifyStart } from "./handlers/verify";
 import { runVerifyConfirm } from "./handlers/confirm";
 import { runWhois } from "./handlers/whois";
 import { runUnverify } from "./handlers/unverify";
+import { runManualVerify } from "./handlers/manual-verify";
 import {
   handleSetupComponent, handleSetupModal,
   preflightSetupModal, runVerifySetup,
@@ -122,6 +123,21 @@ async function handleCommand(interaction: APIApplicationCommandInteraction, env:
       env, interactionToken: interaction.token,
       callerDiscordId: discordUserId, callerPermissions: permissions,
       targetDiscordId,
+    });
+    return;
+  }
+
+  if (name === "manual-verify") {
+    const targetDiscordId = String(opt("user")?.value ?? "");
+    const wareraUsername = String(opt("username")?.value ?? "");
+    if (!targetDiscordId || !wareraUsername) {
+      await editFallback(env, interaction.token, "Missing `user` or `username`.");
+      return;
+    }
+    await runManualVerify({
+      env, interactionToken: interaction.token,
+      callerDiscordId: discordUserId, callerPermissions: permissions,
+      guildId, targetDiscordId, wareraUsername,
     });
     return;
   }

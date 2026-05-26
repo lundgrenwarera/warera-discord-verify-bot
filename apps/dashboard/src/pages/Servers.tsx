@@ -21,7 +21,7 @@ export function Servers() {
       });
   }, [navigate, session]);
 
-  const installUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=268437504&scope=bot+applications.commands`;
+  const installUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=268437504&scope=bot`;
 
   return (
     <section className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14">

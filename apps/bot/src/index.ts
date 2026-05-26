@@ -1,24 +1,13 @@
 import { InteractionResponseType, InteractionType } from "discord-api-types/v10";
 import type {
-  APIApplicationCommandInteraction,
   APIMessageComponentInteraction,
   APIModalSubmitInteraction,
 } from "discord-api-types/v10";
 import { buildApi } from "./api";
 import { handleWebhookEvent } from "./handlers/install-event";
 import { verifySignature } from "./lib/discord";
-import { sweepOrphanedGuilds } from "./lib/sweeper";
-import { consume, LIMITS } from "./lib/rate-limit";
 import { runVerifyStart } from "./handlers/verify";
 import { runVerifyConfirm } from "./handlers/confirm";
-import { runWhois } from "./handlers/whois";
-import { runUnverify } from "./handlers/unverify";
-import { runManualVerify } from "./handlers/manual-verify";
-import {
-  handleSetupComponent, handleSetupModal,
-  preflightSetupModal, runVerifySetup,
-} from "./handlers/setup";
-import { parsePermissions } from "./lib/permissions";
 import type { Env } from "./types";
 
 const DEFERRED_EPHEMERAL = JSON.stringify({
@@ -62,13 +51,6 @@ export default {
       return json({ type: InteractionResponseType.Pong });
     }
 
-    if (interaction.type === InteractionType.ApplicationCommand) {
-      ctx.waitUntil(safeHandle(env, (interaction as APIApplicationCommandInteraction).token, () =>
-        handleCommand(interaction as APIApplicationCommandInteraction, env),
-      ));
-      return new Response(DEFERRED_EPHEMERAL, { headers: { "content-type": "application/json" } });
-    }
-
     if (interaction.type === InteractionType.MessageComponent) {
       const mc = interaction as APIMessageComponentInteraction;
       const customId = (mc.data as { custom_id?: string }).custom_id ?? "";
@@ -77,103 +59,19 @@ export default {
         return json(verifyModalResponse());
       }
 
-      if (customId.startsWith("setup:")) {
-        const modal = await preflightSetupModal(customId, env, mc.guild_id!);
-        if (modal) {
-          return json({ type: InteractionResponseType.Modal, data: modal });
-        }
-        ctx.waitUntil(safeHandle(env, mc.token, () => handleSetupComponent(mc, env).then(() => undefined)));
-        return new Response(DEFERRED_UPDATE, { headers: { "content-type": "application/json" } });
-      }
-
       ctx.waitUntil(safeHandle(env, mc.token, () => handleComponent(mc, env)));
       return new Response(DEFERRED_UPDATE, { headers: { "content-type": "application/json" } });
     }
 
     if (interaction.type === InteractionType.ModalSubmit) {
       const ms = interaction as APIModalSubmitInteraction;
-      const customId = (ms.data as { custom_id?: string }).custom_id ?? "";
-      ctx.waitUntil(safeHandle(env, ms.token, () => {
-        if (customId.startsWith("setup_modal:")) return handleSetupModal(ms, env);
-        return handleModalSubmit(ms, env);
-      }));
+      ctx.waitUntil(safeHandle(env, ms.token, () => handleModalSubmit(ms, env)));
       return new Response(DEFERRED_EPHEMERAL, { headers: { "content-type": "application/json" } });
     }
 
     return new Response("unhandled interaction type", { status: 400 });
   },
-
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil((async () => {
-      try {
-        const result = await sweepOrphanedGuilds(env);
-        console.log(`sweep: bot in ${result.botGuildCount} guilds, removed ${result.configsRemoved.length} configs:`, result.configsRemoved);
-      } catch (e) {
-        console.error("sweep failed:", e);
-      }
-    })());
-  },
 };
-
-async function handleCommand(interaction: APIApplicationCommandInteraction, env: Env): Promise<void> {
-  const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
-  const guildId = interaction.guild_id;
-  if (!discordUserId || !guildId) return;
-
-  const globalLimit = await consume(env.TOKENS, "rl:global", LIMITS.globalApi);
-  if (!globalLimit.ok) {
-    await editFallback(env, interaction.token, "The bot is rate-limited globally right now. Try again in a minute.");
-    return;
-  }
-
-  const name = (interaction.data as { name: string }).name;
-  const options = (interaction.data as { options?: Array<{ name: string; value?: string }> }).options ?? [];
-  const opt = (n: string) => options.find((o) => o.name === n);
-  const permissions = parsePermissions(interaction.member?.permissions);
-
-  if (name === "verify-setup") {
-    await runVerifySetup(interaction, env);
-    return;
-  }
-
-  if (name === "whois") {
-    const targetDiscordId = opt("user")?.value;
-    const targetUsername = opt("username")?.value;
-    await runWhois({
-      env, interactionToken: interaction.token,
-      callerDiscordId: discordUserId, callerPermissions: permissions,
-      targetDiscordId, targetUsername,
-    });
-    return;
-  }
-
-  if (name === "unverify") {
-    const targetDiscordId = opt("user")?.value;
-    await runUnverify({
-      env, interactionToken: interaction.token,
-      callerDiscordId: discordUserId, callerPermissions: permissions,
-      targetDiscordId,
-    });
-    return;
-  }
-
-  if (name === "manual-verify") {
-    const targetDiscordId = String(opt("user")?.value ?? "");
-    const wareraUsername = String(opt("username")?.value ?? "");
-    if (!targetDiscordId || !wareraUsername) {
-      await editFallback(env, interaction.token, "Missing `user` or `username`.");
-      return;
-    }
-    await runManualVerify({
-      env, interactionToken: interaction.token,
-      callerDiscordId: discordUserId, callerPermissions: permissions,
-      guildId, targetDiscordId, wareraUsername,
-    });
-    return;
-  }
-
-  await editFallback(env, interaction.token, `Unknown command: ${name}`);
-}
 
 function verifyModalResponse() {
   return {

@@ -5,7 +5,7 @@ import { DISCORD_CLIENT_ID } from "../lib/config";
 
 export function Landing() {
   const session = getSession();
-  const installUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=268437504&scope=bot+applications.commands`;
+  const installUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=268437504&scope=bot`;
 
   return (
     <section className="mx-auto w-full max-w-xl px-4 py-12 sm:py-20">

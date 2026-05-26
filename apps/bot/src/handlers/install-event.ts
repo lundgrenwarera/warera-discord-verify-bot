@@ -1,25 +1,34 @@
 import type { Env } from "../types";
+import { sweepOrphanedGuilds } from "../lib/sweeper";
 
 const API = "https://discord.com/api/v10";
 
-interface ApplicationAuthorizedEvent {
-  type: 0;
-  event: {
-    type: "APPLICATION_AUTHORIZED";
-    data: {
-      integration_type?: 0 | 1;
-      user: { id: string; username: string };
-      scopes: string[];
+interface WebhookEnvelope {
+  type: 0 | 1;
+  event?: {
+    type: "APPLICATION_AUTHORIZED" | "APPLICATION_DEAUTHORIZED";
+    data?: {
+      user?: { id: string; username?: string };
+      scopes?: string[];
       guild?: { id: string; name: string };
     };
   };
 }
 
-export async function handleWebhookEvent(env: Env, body: ApplicationAuthorizedEvent): Promise<void> {
-  if (body.event?.type !== "APPLICATION_AUTHORIZED") return;
-  const data = body.event.data;
-  if (!data.guild) return;
-  await sendInstallerDM(env, data.user.id, data.guild.name);
+export async function handleWebhookEvent(env: Env, body: WebhookEnvelope): Promise<void> {
+  const t = body.event?.type;
+  if (t === "APPLICATION_AUTHORIZED") {
+    const data = body.event?.data;
+    if (data?.guild && data.user?.id) {
+      await sendInstallerDM(env, data.user.id, data.guild.name);
+    }
+    return;
+  }
+  if (t === "APPLICATION_DEAUTHORIZED") {
+    const result = await sweepOrphanedGuilds(env);
+    console.log(`deauthorize sweep: bot in ${result.botGuildCount} guilds, removed ${result.configsRemoved.length} configs:`, result.configsRemoved);
+    return;
+  }
 }
 
 async function sendInstallerDM(env: Env, userId: string, guildName: string): Promise<void> {

@@ -11,7 +11,7 @@ Two apps in one monorepo:
 
 ## Install the bot
 
-[**Add to your server →**](https://discord.com/oauth2/authorize?client_id=1508781171218190456&permissions=268437504&scope=bot+applications.commands)
+[**Add to your server →**](https://discord.com/oauth2/authorize?client_id=1508781171218190456&permissions=268437504&scope=bot)
 
 After installing, drag the **WarEra** bot role above any role you want it to assign in *Server Settings → Roles*, then open the dashboard to configure.
 
@@ -39,17 +39,6 @@ Every server setting is at https://warera-discord-verify-dashboard.pages.dev. Si
 - **Members tab** — see who's verified, who has tracked roles but isn't in the DB ("orphan"), and discrepancies (country changed, gov role stale, username mismatch); one-click manual-link for orphans
 - **Manual verify** — for permamuted accounts that can't rename, admins attest and skip the rename step
 
-## Slash commands
-
-Slash commands are intentionally kept minimal — the dashboard does the heavy lifting.
-
-| Command | Who | What |
-|---|---|---|
-| `/verify-setup` | Admins | Interactive in-Discord version of the dashboard |
-| `/whois` | Mods | Look up the War Era account linked to a Discord user (or vice versa) |
-| `/unverify` | Self / admins | Remove a verification link |
-| `/manual-verify` | Admins | Skip the rename step (for permamuted accounts) |
-
 ## Rate limits
 
 - Per Discord user: 3 verification starts/hour, 10 confirm attempts/hour
@@ -73,7 +62,6 @@ pnpm wrangler secret put DISCORD_CLIENT_SECRET
 pnpm wrangler secret put JWT_SECRET   # any 32+ char random string
 pnpm wrangler secret put DASHBOARD_ORIGIN   # your dashboard URL
 pnpm deploy
-pnpm register-commands
 # wire the worker URL into Discord application's Interactions Endpoint URL
 ```
 

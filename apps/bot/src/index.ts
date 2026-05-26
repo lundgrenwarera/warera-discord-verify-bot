@@ -7,6 +7,7 @@ import type {
 import { buildApi } from "./api";
 import { handleWebhookEvent } from "./handlers/install-event";
 import { verifySignature } from "./lib/discord";
+import { sweepOrphanedGuilds } from "./lib/sweeper";
 import { consume, LIMITS } from "./lib/rate-limit";
 import { runVerifyStart } from "./handlers/verify";
 import { runVerifyConfirm } from "./handlers/confirm";
@@ -100,6 +101,17 @@ export default {
     }
 
     return new Response("unhandled interaction type", { status: 400 });
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil((async () => {
+      try {
+        const result = await sweepOrphanedGuilds(env);
+        console.log(`sweep: bot in ${result.botGuildCount} guilds, removed ${result.configsRemoved.length} configs:`, result.configsRemoved);
+      } catch (e) {
+        console.error("sweep failed:", e);
+      }
+    })());
   },
 };
 

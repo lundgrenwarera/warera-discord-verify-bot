@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "../components/Button";
 import { Panel } from "../components/Panel";
+import { HierarchyBanner } from "../components/HierarchyBanner";
 import { RolePicker } from "../components/RolePicker";
 import { CountryPicker } from "../components/CountryPicker";
 import { api, type BotConfig, type GuildRole } from "../lib/api";
@@ -93,9 +94,9 @@ export function ServerConfig() {
       <section className="mx-auto w-full max-w-xl px-4 py-12 sm:py-20">
         <div className="text-center">
           <div className="label text-loss">Access denied</div>
-          <h1 className="mt-2 bracket-heading text-2xl sm:text-3xl text-text">Couldn't load this server</h1>
+          <h1 className="bracket-heading mt-1 text-sm text-text">Couldn't load this server</h1>
           <p className="mt-3 text-sm text-text-muted">{error}</p>
-          <Link to="/servers" className="mt-6 inline-block font-mono text-[11px] uppercase tracking-wider text-text-faint hover:text-accent">
+          <Link to="/servers" className="mt-4 inline-block font-mono text-[11px] uppercase tracking-wider text-text-faint hover:text-accent">
             ← Back to servers
           </Link>
         </div>
@@ -105,28 +106,27 @@ export function ServerConfig() {
 
   if (!cfg) {
     return (
-      <section className="mx-auto w-full max-w-xl px-4 py-12 sm:py-20">
-        <div className="label">Loading…</div>
+      <section className="mx-auto w-full max-w-4xl px-4 py-16 sm:px-6">
+        <div className="font-mono text-[11px] uppercase tracking-wider text-text-faint">Loading…</div>
       </section>
     );
   }
 
   const textChannels = channels.filter((c) => c.type === 0);
+  const verifiedSet = !!cfg.verifiedRoleId;
+  const welcomeReady = verifiedSet;
 
   return (
-    <section className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
-      <div>
+    <section className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14 pb-32">
+      <div className="mb-6">
         <div className="flex items-center gap-3">
           <Link to="/servers" className="label hover:text-text">← Servers</Link>
           <span className="font-mono text-[10px] text-text-faint">{guildId}</span>
         </div>
-        <div className="mt-4 flex items-end justify-between gap-3">
+        <div className="mt-4 flex items-end justify-between gap-3 flex-wrap">
           <div>
             <div className="label">Configuration</div>
-            <h1 className="mt-2 bracket-heading text-xl sm:text-2xl text-text">Server configuration</h1>
-            <p className="mt-3 text-sm text-text-muted">
-              Changes save together. Use the save button at the bottom.
-            </p>
+            <h1 className="mt-2 bracket-heading text-xl sm:text-2xl text-text">Server settings</h1>
           </div>
           <Link
             to={`/servers/${guildId}/members`}
@@ -137,8 +137,10 @@ export function ServerConfig() {
         </div>
       </div>
 
-      <div className="mt-8 space-y-4">
-        <Panel title="01 — Verified role" subtitle="Assigned to every member that completes verification. Required.">
+      <HierarchyBanner guildId={guildId} />
+
+      <Group title="Essentials" subtitle="The two things you need to set before anyone can verify.">
+        <Panel title="Verified role" subtitle="Every successful verification gets this role. Required.">
           <RolePicker
             roles={roles}
             value={cfg.verifiedRoleId ? [cfg.verifiedRoleId] : []}
@@ -148,16 +150,63 @@ export function ServerConfig() {
           />
         </Panel>
 
-        <Panel title="02 — Who can verify" subtitle="Leave empty to allow anyone with a War Era account. Add countries to restrict.">
-          <CountryPicker
-            options={countries}
-            value={cfg.allowedCountries ?? []}
-            onChange={(c) => patch({ allowedCountries: c.length ? c : undefined })}
-            placeholder="Add a country to the allow-list"
-          />
+        <Panel title="Post the verify message" subtitle="Drops a Discord message with the Verify button into a channel. Members click it to start verification.">
+          {!welcomeReady && (
+            <p className="mb-3 text-xs text-warn">Set a verified role first.</p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={welcomeChannel}
+              onChange={(e) => setWelcomeChannel(e.target.value)}
+              className="w-64 rounded border border-border bg-surface px-4 py-2.5 text-sm text-text outline-none focus:border-accent"
+            >
+              <option value="">Pick a channel…</option>
+              {textChannels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
+            </select>
+            <Button onClick={postWelcome} disabled={!welcomeChannel || !welcomeReady}>
+              Post welcome
+            </Button>
+          </div>
+        </Panel>
+      </Group>
+
+      <Group title="Citizen verification" subtitle="Control who can verify and what roles they get based on their War Era country.">
+        <Panel title="Who can verify" subtitle="Leave the country list empty to allow anyone with a War Era account. Add countries to restrict.">
+          <div className="space-y-4">
+            <div>
+              <div className="label mb-2">Allowed countries</div>
+              <CountryPicker
+                options={countries}
+                value={cfg.allowedCountries ?? []}
+                onChange={(c) => patch({ allowedCountries: c.length ? c : undefined })}
+                placeholder="Add a country to the allow-list"
+              />
+            </div>
+
+            <div>
+              <div className="label mb-2">Minimum War Era level</div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min="0" max="200"
+                  className="w-28 rounded border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                  placeholder="off"
+                  value={cfg.minLevel ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") return patch({ minLevel: undefined });
+                    const n = Number(v);
+                    if (Number.isFinite(n) && n >= 0) patch({ minLevel: n > 0 ? n : undefined });
+                  }}
+                />
+                <div className="text-xs text-text-muted leading-snug max-w-md">
+                  Below this level, the bot still verifies the account but withholds the country and foreign-country roles. The verified role and government roles are unaffected. Recommended: 10 (catches multi accounts).
+                </div>
+              </div>
+            </div>
+          </div>
         </Panel>
 
-        <Panel title="03 — Roles per country" subtitle="Extra roles for verified citizens of specific countries. Stacks with the verified role.">
+        <Panel title="Roles per country" subtitle="Extra role per citizen country, on top of the verified role. e.g. Swedes also get @Sweden.">
           <PerKeyRoleMap
             keys={Array.from(new Set([...(cfg.allowedCountries ?? []), ...Object.keys(cfg.countryRoles ?? {})])).sort()}
             value={cfg.countryRoles ?? {}}
@@ -168,8 +217,10 @@ export function ServerConfig() {
             keyKind="country"
           />
         </Panel>
+      </Group>
 
-        <Panel title="04 — Government roles" subtitle="Assigned when a verified citizen holds a cabinet position. 'Anyone in government' applies to all five positions.">
+      <Group title="Government" subtitle="Optional. Assign extra roles to members who hold cabinet positions. Useful for country Discords with @President / @Cabinet roles, or embassy servers.">
+        <Panel title="Domestic cabinet roles" subtitle="When a verified citizen holds a cabinet position in their country, assign these extra roles. 'Anyone in government' covers all five positions.">
           <PerKeyRoleMap
             keys={GOV_BUCKETS.map((b) => b.key)}
             keyLabels={Object.fromEntries(GOV_BUCKETS.map((b) => [b.key, b.label]))}
@@ -180,8 +231,8 @@ export function ServerConfig() {
           />
         </Panel>
 
-        <Panel title="05 — Foreign government bypass" subtitle="Allow cabinet members from other countries to verify, with country-named roles. Useful for embassy servers.">
-          <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-text">
+        <Panel title="Foreign government bypass" subtitle="Let cabinet members from other countries verify here. Useful when your server hosts diplomats. Each foreign country gets its own role (e.g. @Portugal, @Spain).">
+          <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-text">
             <input
               type="checkbox"
               className="h-4 w-4 accent-accent"
@@ -189,7 +240,7 @@ export function ServerConfig() {
               onChange={(e) => patch({ allowForeignGovernment: e.target.checked || undefined })}
             />
             <span>
-              Bypass is{" "}
+              Foreign government bypass is{" "}
               <strong className={cfg.allowForeignGovernment ? "text-accent" : "text-text-faint"}>
                 {cfg.allowForeignGovernment ? "enabled" : "disabled"}
               </strong>
@@ -207,26 +258,10 @@ export function ServerConfig() {
             />
           )}
         </Panel>
+      </Group>
 
-        <Panel title="06 — Anti-multi level gate" subtitle="Withhold country roles below this War Era level. Verified role and government roles always go through.">
-          <div className="flex items-center gap-3">
-            <input
-              type="number" min="0" max="200"
-              className="w-32 rounded border border-border bg-surface px-4 py-2.5 text-sm text-text outline-none focus:border-accent"
-              placeholder="off"
-              value={cfg.minLevel ?? ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "") return patch({ minLevel: undefined });
-                const n = Number(v);
-                if (Number.isFinite(n) && n >= 0) patch({ minLevel: n > 0 ? n : undefined });
-              }}
-            />
-            <span className="text-xs text-text-faint">Leave blank or 0 to disable. Recommended: 10.</span>
-          </div>
-        </Panel>
-
-        <Panel title="07 — Dashboard access" subtitle="Members with one of these roles can access this server's config without server-Administrator. Only Administrators can edit this list.">
+      <Group title="Admin tools" subtitle="Permissions and operations for moderators.">
+        <Panel title="Dashboard access" subtitle="Members with one of these roles can use this dashboard without being a server Administrator. Only Administrators can edit this list.">
           <RolePicker
             roles={roles}
             value={cfg.dashboardManagerRoleIds ?? []}
@@ -235,24 +270,7 @@ export function ServerConfig() {
           />
         </Panel>
 
-        <Panel title="08 — Post the verify message" subtitle="Drops a Discord message with the Verify button into a channel.">
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={welcomeChannel}
-              onChange={(e) => setWelcomeChannel(e.target.value)}
-              className="w-64 rounded border border-border bg-surface px-4 py-2.5 text-sm text-text outline-none focus:border-accent"
-            >
-              <option value="">Pick a channel…</option>
-              {textChannels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
-            </select>
-            <Button onClick={postWelcome} disabled={!welcomeChannel || !cfg.verifiedRoleId}>
-              Post welcome
-            </Button>
-            {!cfg.verifiedRoleId && <span className="text-xs text-text-faint">Set a verified role first.</span>}
-          </div>
-        </Panel>
-
-        <Panel title="09 — Manual verify" subtitle="For permamuted accounts that can't rename companies. Skips the rename, applies all server rules.">
+        <Panel title="Manual verify" subtitle="Verify a Discord member as a War Era account without the company-rename step. For accounts that are permamuted in-game and can't rename, or for migrating already-trusted members.">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
             <input
               value={manualUser}
@@ -263,16 +281,16 @@ export function ServerConfig() {
             <input
               value={manualUsername}
               onChange={(e) => setManualUsername(e.target.value)}
-              placeholder="War Era username"
+              placeholder="War Era username or profile URL"
               className="rounded border border-border bg-surface px-4 py-2.5 text-sm text-text outline-none focus:border-accent"
             />
             <Button onClick={runManual} disabled={!manualUser || !manualUsername}>Verify</Button>
           </div>
           {manualResult && <div className="mt-3 font-mono text-xs text-text-muted">{manualResult}</div>}
         </Panel>
-      </div>
+      </Group>
 
-      <div className="sticky bottom-0 -mx-4 mt-8 border-t border-border bg-bg/95 backdrop-blur px-4 py-3 sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-0 -mx-4 mt-10 border-t border-border bg-bg/95 backdrop-blur px-4 py-3 sm:-mx-6 sm:px-6">
         <div className="flex items-center justify-between gap-4">
           <div className="text-xs">
             {error && <span className="font-mono text-loss">{error}</span>}
@@ -288,6 +306,18 @@ export function ServerConfig() {
         </div>
       </div>
     </section>
+  );
+}
+
+function Group({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-8 first:mt-0">
+      <div className="mb-3">
+        <div className="label text-accent">{title}</div>
+        <p className="mt-1 text-xs text-text-muted max-w-2xl">{subtitle}</p>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
   );
 }
 
@@ -321,7 +351,7 @@ function PerKeyRoleMap({
         <div className="text-xs text-text-faint">Add a {keyKind} below to start assigning roles.</div>
       )}
       {orderedKeys.map((key) => (
-        <div key={key} className="rounded border border-border bg-bg p-4">
+        <div key={key} className="rounded border border-border bg-bg p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-sm font-medium text-text">{keyLabels?.[key] ?? key}</div>
             {allowAdd && (

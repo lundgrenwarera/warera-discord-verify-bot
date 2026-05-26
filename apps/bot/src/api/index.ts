@@ -7,7 +7,8 @@ import {
   cacheUserGuilds, computeManagerGuildIds, exchangeOAuthCode, fetchOAuthGuilds, fetchOAuthUser,
   getCachedUserGuilds, issueSession, pickAdminGuildIds, verifySession, type SessionPayload,
 } from "./auth";
-import { buildMembersView } from "./members";
+import { buildMembersView, GuildAccessError } from "./members";
+import { checkHierarchy, collectConfiguredRoleIds } from "../lib/hierarchy";
 import { fetchGuildRoles, sendChannelMessage } from "../lib/discord";
 import { fetchGovernment, fetchUserById, getCountryName, getCountryNames, resolveUsername } from "../lib/warera-api";
 
@@ -273,12 +274,43 @@ export function buildApi(): Hono<AppEnv> {
     return c.json({ countries: names });
   });
 
+  app.get("/api/guilds/:guildId/hierarchy", async (c) => {
+    const guildId = c.req.param("guildId");
+    const [rolesRes, memberRes] = await Promise.all([
+      fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+        headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}` },
+      }),
+      fetch(`https://discord.com/api/v10/guilds/${guildId}/members/${c.env.DISCORD_APP_ID}`, {
+        headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}` },
+      }),
+    ]);
+    if (!rolesRes.ok || !memberRes.ok) {
+      return c.json({ error: "bot not in this server", code: "bot-not-in-guild" }, 409);
+    }
+    const allGuildRoles = await rolesRes.json() as Array<{ id: string; name: string; position: number; managed: boolean }>;
+    const botMember = await memberRes.json() as { roles: string[] };
+    const cfg = normalizeConfig(await c.env.GUILDS.get(`g:${guildId}`, "json"));
+    const configuredRoleIds = collectConfiguredRoleIds(cfg);
+    const result = checkHierarchy({
+      allGuildRoles,
+      botMemberRoleIds: botMember.roles,
+      configuredRoleIds,
+    });
+    return c.json(result);
+  });
+
   app.get("/api/guilds/:guildId/members", async (c) => {
     const guildId = c.req.param("guildId");
     try {
       const rows = await buildMembersView(c.env, guildId);
       return c.json({ members: rows });
     } catch (e) {
+      if (e instanceof GuildAccessError) {
+        const reason = e.status === 403 || e.status === 401
+          ? "bot is not in this server (or was kicked). Re-invite it to use the Members view."
+          : `Discord returned ${e.status}`;
+        return c.json({ error: reason, code: "bot-not-in-guild" }, 409);
+      }
       console.error("members endpoint failed:", e);
       return c.json({ error: `members fetch failed: ${(e as Error).message ?? e}` }, 500);
     }

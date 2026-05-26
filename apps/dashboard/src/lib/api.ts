@@ -18,7 +18,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!r.ok) {
     const body = await r.text();
-    throw { status: r.status, message: body || r.statusText } satisfies ApiError;
+    let message = body || r.statusText;
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed?.error === "string") message = parsed.error;
+    } catch { /* not JSON, keep raw body */ }
+    throw { status: r.status, message } satisfies ApiError;
   }
   return r.json() as Promise<T>;
 }
@@ -71,11 +76,18 @@ export interface MemberRow {
   };
 }
 
+export interface HierarchyCheck {
+  ok: boolean;
+  botMaxPosition: number;
+  blocking: Array<{ id: string; name: string; position: number }>;
+}
+
 export const api = {
   guilds: () => request<{ guilds: GuildSummary[] }>("/api/me/guilds"),
   guildRoles: (guildId: string) => request<{ roles: GuildRole[] }>(`/api/guilds/${guildId}/roles`),
   guildConfig: (guildId: string) => request<BotConfig>(`/api/guilds/${guildId}/config`),
   guildMembers: (guildId: string) => request<{ members: MemberRow[] }>(`/api/guilds/${guildId}/members`),
+  guildHierarchy: (guildId: string) => request<HierarchyCheck>(`/api/guilds/${guildId}/hierarchy`),
   saveGuildConfig: (guildId: string, cfg: BotConfig) =>
     request<BotConfig>(`/api/guilds/${guildId}/config`, {
       method: "PUT", body: JSON.stringify(cfg),

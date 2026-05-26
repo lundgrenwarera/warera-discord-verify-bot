@@ -32,6 +32,12 @@ export interface MemberRow {
   };
 }
 
+export class GuildAccessError extends Error {
+  constructor(public status: number, public detail: string) {
+    super(`guild fetch failed (${status}): ${detail}`);
+  }
+}
+
 async function fetchAllGuildMembers(env: Env, guildId: string): Promise<DiscordMember[]> {
   const all: DiscordMember[] = [];
   let after = "0";
@@ -39,7 +45,11 @@ async function fetchAllGuildMembers(env: Env, guildId: string): Promise<DiscordM
     const r = await fetch(`https://discord.com/api/v10/guilds/${guildId}/members?limit=1000&after=${after}`, {
       headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
     });
-    if (!r.ok) break;
+    if (!r.ok) {
+      const body = await r.text();
+      if (i === 0) throw new GuildAccessError(r.status, body);
+      break;
+    }
     const batch = await r.json() as DiscordMember[];
     if (batch.length === 0) break;
     all.push(...batch);

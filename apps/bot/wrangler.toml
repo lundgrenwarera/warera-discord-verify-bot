@@ -21,3 +21,7 @@ kv_namespaces = [
 # Plain vars (safe in source):
 [vars]
 TOKEN_TTL_SECONDS = "900"
+
+# Daily sweep: drop KV entries for guilds the bot is no longer in.
+[triggers]
+crons = ["0 4 * * *"]

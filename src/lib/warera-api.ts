@@ -99,3 +99,19 @@ export async function getCountryNames(kv: KVNamespace): Promise<string[]> {
   const map = await getCountryMap(kv);
   return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
 }
+
+export async function getCountryIdByName(kv: KVNamespace, name: string): Promise<string | null> {
+  const map = await getCountryMap(kv);
+  for (const [id, n] of map.entries()) {
+    if (n === name) return id;
+  }
+  return null;
+}
+
+export async function fetchGovernment(countryId: string): Promise<import("../types").Government | null> {
+  try {
+    return await trpcGet<import("../types").Government>("government.getByCountryId", { countryId });
+  } catch {
+    return null;
+  }
+}

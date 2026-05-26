@@ -24,11 +24,46 @@ export interface Link {
   verifiedAt: number;
 }
 
+export type GovernmentPosition =
+  | "president"
+  | "vicePresident"
+  | "defense"
+  | "economy"
+  | "foreignAffairs";
+
+export type GovernmentBucket = GovernmentPosition | "any";
+
+export const GOVERNMENT_POSITIONS: readonly GovernmentPosition[] = [
+  "president", "vicePresident", "defense", "economy", "foreignAffairs",
+] as const;
+
+export const GOVERNMENT_BUCKETS: readonly GovernmentBucket[] = [
+  "any", ...GOVERNMENT_POSITIONS,
+] as const;
+
+export const GOVERNMENT_BUCKET_LABELS: Record<GovernmentBucket, string> = {
+  any: "Anyone in government",
+  president: "President",
+  vicePresident: "Vice President",
+  defense: "Minister of Defense",
+  economy: "Minister of Economy",
+  foreignAffairs: "Minister of Foreign Affairs",
+};
+
 export interface GuildConfig {
-  /** Role assigned to everyone who passes verification. */
   verifiedRoleId?: string;
-  /** If set, only these War Era countries are allowed to verify. */
   allowedCountries?: string[];
-  /** Extra per-country role assignments (in addition to verifiedRoleId). */
   countryRoles?: Record<string, string[]>;
+  governmentRoles?: Partial<Record<GovernmentBucket, string[]>>;
+  allowForeignGovernment?: boolean;
+  foreignCountryRoles?: Record<string, string[]>;
+}
+
+export interface Government {
+  president?: string;
+  vicePresident?: string;
+  minOfDefense?: string;
+  minOfEconomy?: string;
+  minOfForeignAffairs?: string;
+  congressMembers?: string[];
 }

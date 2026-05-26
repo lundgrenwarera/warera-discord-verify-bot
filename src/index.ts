@@ -1,8 +1,6 @@
 import { InteractionResponseType, InteractionType } from "discord-api-types/v10";
 import type {
-  APIApplicationCommandAutocompleteInteraction,
   APIApplicationCommandInteraction,
-  APIApplicationCommandInteractionDataOption,
   APIMessageComponentInteraction,
   APIModalSubmitInteraction,
 } from "discord-api-types/v10";
@@ -11,13 +9,12 @@ import { consume, LIMITS } from "./lib/rate-limit";
 import { runVerifyStart } from "./handlers/verify";
 import { runVerifyConfirm } from "./handlers/confirm";
 import { runWhois } from "./handlers/whois";
-import {
-  runConfigShow, runConfigSetVerifiedRole, runConfigAllowCountry,
-  runConfigDisallowCountry, runConfigAddCountryRole, runConfigRemoveCountryRole,
-  runConfigReset, runConfigPostWelcome,
-} from "./handlers/config";
 import { runUnverify } from "./handlers/unverify";
-import { getCountryNames } from "./lib/warera-api";
+import {
+  handleSetupComponent, handleSetupModal,
+  preflightSetupModal, runVerifySetup,
+} from "./handlers/setup";
+import { parsePermissions } from "./lib/permissions";
 import type { Env } from "./types";
 
 const DEFERRED_EPHEMERAL = JSON.stringify({
@@ -46,79 +43,46 @@ export default {
     }
 
     if (interaction.type === InteractionType.ApplicationCommand) {
-      ctx.waitUntil(handleCommand(interaction as APIApplicationCommandInteraction, env));
+      ctx.waitUntil(safeHandle(env, (interaction as APIApplicationCommandInteraction).token, () =>
+        handleCommand(interaction as APIApplicationCommandInteraction, env),
+      ));
       return new Response(DEFERRED_EPHEMERAL, { headers: { "content-type": "application/json" } });
     }
 
     if (interaction.type === InteractionType.MessageComponent) {
-      const customId = ((interaction as APIMessageComponentInteraction).data as { custom_id?: string }).custom_id ?? "";
+      const mc = interaction as APIMessageComponentInteraction;
+      const customId = (mc.data as { custom_id?: string }).custom_id ?? "";
+
       if (customId === "verify:start") {
         return json(verifyModalResponse());
       }
-      ctx.waitUntil(handleComponent(interaction as APIMessageComponentInteraction, env));
+
+      if (customId.startsWith("setup:")) {
+        const modal = await preflightSetupModal(customId, env, mc.guild_id!);
+        if (modal) {
+          return json({ type: InteractionResponseType.Modal, data: modal });
+        }
+        ctx.waitUntil(safeHandle(env, mc.token, () => handleSetupComponent(mc, env).then(() => undefined)));
+        return new Response(DEFERRED_UPDATE, { headers: { "content-type": "application/json" } });
+      }
+
+      ctx.waitUntil(safeHandle(env, mc.token, () => handleComponent(mc, env)));
       return new Response(DEFERRED_UPDATE, { headers: { "content-type": "application/json" } });
     }
 
-    if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
-      return handleAutocomplete(interaction as APIApplicationCommandAutocompleteInteraction, env);
-    }
-
     if (interaction.type === InteractionType.ModalSubmit) {
-      ctx.waitUntil(handleModalSubmit(interaction as APIModalSubmitInteraction, env));
+      const ms = interaction as APIModalSubmitInteraction;
+      const customId = (ms.data as { custom_id?: string }).custom_id ?? "";
+      ctx.waitUntil(safeHandle(env, ms.token, () => {
+        if (customId.startsWith("setup_modal:")) return handleSetupModal(ms, env);
+        return handleModalSubmit(ms, env);
+      }));
       return new Response(DEFERRED_EPHEMERAL, { headers: { "content-type": "application/json" } });
     }
 
     return new Response("unhandled interaction type", { status: 400 });
   },
 };
-
-async function handleAutocomplete(
-  interaction: APIApplicationCommandAutocompleteInteraction,
-  env: Env,
-): Promise<Response> {
-  const focused = findFocusedOption(
-    (interaction.data as { options?: APIApplicationCommandInteractionDataOption[] }).options ?? [],
-  );
-  if (!focused || focused.name !== "country") return autocompleteEmpty();
-
-  const query = String(focused.value ?? "").toLowerCase();
-  let names: string[];
-  try {
-    names = await getCountryNames(env.LINKS);
-  } catch {
-    return autocompleteEmpty();
-  }
-  const filtered = (query
-    ? names.filter((n) => n.toLowerCase().includes(query))
-    : names
-  ).slice(0, 25);
-
-  return json({
-    type: InteractionResponseType.ApplicationCommandAutocompleteResult,
-    data: { choices: filtered.map((n) => ({ name: n, value: n })) },
-  });
-}
-
-function findFocusedOption(
-  options: APIApplicationCommandInteractionDataOption[],
-): { name: string; value?: string } | null {
-  for (const o of options) {
-    const opt = o as { name: string; value?: string; focused?: boolean; options?: APIApplicationCommandInteractionDataOption[] };
-    if (opt.focused) return opt;
-    if (opt.options) {
-      const inner = findFocusedOption(opt.options);
-      if (inner) return inner;
-    }
-  }
-  return null;
-}
-
-function autocompleteEmpty(): Response {
-  return json({
-    type: InteractionResponseType.ApplicationCommandAutocompleteResult,
-    data: { choices: [] },
-  });
-}
 
 async function handleCommand(interaction: APIApplicationCommandInteraction, env: Env): Promise<void> {
   const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
@@ -132,24 +96,18 @@ async function handleCommand(interaction: APIApplicationCommandInteraction, env:
   }
 
   const name = (interaction.data as { name: string }).name;
-  const options = (interaction.data as { options?: APIApplicationCommandInteractionDataOption[] }).options ?? [];
+  const options = (interaction.data as { options?: Array<{ name: string; value?: string }> }).options ?? [];
   const opt = (n: string) => options.find((o) => o.name === n);
+  const permissions = parsePermissions(interaction.member?.permissions);
 
-  const permissions = BigInt(interaction.member?.permissions ?? "0");
-
-  if (name === "verify") {
-    const username = String((opt("username") as { value?: string } | undefined)?.value ?? "");
-    if (!username) {
-      await editFallback(env, interaction.token, "Pass a username, e.g. `/verify username:lundgren`.");
-      return;
-    }
-    await runVerifyStart({ env, interactionToken: interaction.token, discordUserId, guildId, username });
+  if (name === "verify-setup") {
+    await runVerifySetup(interaction, env);
     return;
   }
 
   if (name === "whois") {
-    const targetDiscordId = (opt("user") as { value?: string } | undefined)?.value;
-    const targetUsername = (opt("username") as { value?: string } | undefined)?.value;
+    const targetDiscordId = opt("user")?.value;
+    const targetUsername = opt("username")?.value;
     await runWhois({
       env, interactionToken: interaction.token,
       callerDiscordId: discordUserId, callerPermissions: permissions,
@@ -158,17 +116,8 @@ async function handleCommand(interaction: APIApplicationCommandInteraction, env:
     return;
   }
 
-  if (name === "verify-config") {
-    await routeVerifyConfig({
-      env, interactionToken: interaction.token, options,
-      callerPermissions: permissions, guildId,
-      channelId: interaction.channel_id ?? interaction.channel?.id,
-    });
-    return;
-  }
-
   if (name === "unverify") {
-    const targetDiscordId = (opt("user") as { value?: string } | undefined)?.value;
+    const targetDiscordId = opt("user")?.value;
     await runUnverify({
       env, interactionToken: interaction.token,
       callerDiscordId: discordUserId, callerPermissions: permissions,
@@ -178,97 +127,6 @@ async function handleCommand(interaction: APIApplicationCommandInteraction, env:
   }
 
   await editFallback(env, interaction.token, `Unknown command: ${name}`);
-}
-
-interface SubOption { name: string; value?: string; type?: number }
-
-async function routeVerifyConfig(args: {
-  env: Env;
-  interactionToken: string;
-  callerPermissions: bigint;
-  guildId: string;
-  options: APIApplicationCommandInteractionDataOption[];
-  channelId?: string;
-}): Promise<void> {
-  const sub = args.options[0] as { name: string; options?: SubOption[] } | undefined;
-  if (!sub) {
-    await editFallback(args.env, args.interactionToken, "Missing subcommand. Try `/verify-config show`.");
-    return;
-  }
-  const subOpts = sub.options ?? [];
-  const subOpt = (n: string) => subOpts.find((o) => o.name === n);
-
-  const common = {
-    env: args.env,
-    interactionToken: args.interactionToken,
-    callerPermissions: args.callerPermissions,
-    guildId: args.guildId,
-  };
-
-  if (sub.name === "show") {
-    await runConfigShow(common);
-    return;
-  }
-  if (sub.name === "set-verified-role") {
-    const roleId = String(subOpt("role")?.value ?? "");
-    if (!roleId) {
-      await editFallback(args.env, args.interactionToken, "Missing `role`.");
-      return;
-    }
-    await runConfigSetVerifiedRole({ ...common, roleId });
-    return;
-  }
-  if (sub.name === "allow-country") {
-    const country = String(subOpt("country")?.value ?? "");
-    if (!country) {
-      await editFallback(args.env, args.interactionToken, "Missing `country`.");
-      return;
-    }
-    await runConfigAllowCountry({ ...common, country });
-    return;
-  }
-  if (sub.name === "disallow-country") {
-    const country = String(subOpt("country")?.value ?? "");
-    if (!country) {
-      await editFallback(args.env, args.interactionToken, "Missing `country`.");
-      return;
-    }
-    await runConfigDisallowCountry({ ...common, country });
-    return;
-  }
-  if (sub.name === "add-country-role") {
-    const country = String(subOpt("country")?.value ?? "");
-    const roleId = String(subOpt("role")?.value ?? "");
-    if (!country || !roleId) {
-      await editFallback(args.env, args.interactionToken, "Missing `country` or `role`.");
-      return;
-    }
-    await runConfigAddCountryRole({ ...common, country, roleId });
-    return;
-  }
-  if (sub.name === "remove-country-role") {
-    const country = String(subOpt("country")?.value ?? "");
-    const roleId = String(subOpt("role")?.value ?? "");
-    if (!country || !roleId) {
-      await editFallback(args.env, args.interactionToken, "Missing `country` or `role`.");
-      return;
-    }
-    await runConfigRemoveCountryRole({ ...common, country, roleId });
-    return;
-  }
-  if (sub.name === "post-welcome") {
-    if (!args.channelId) {
-      await editFallback(args.env, args.interactionToken, "Run this command in the channel where you want the welcome message.");
-      return;
-    }
-    await runConfigPostWelcome({ ...common, channelId: args.channelId });
-    return;
-  }
-  if (sub.name === "reset") {
-    await runConfigReset(common);
-    return;
-  }
-  await editFallback(args.env, args.interactionToken, `Unknown subcommand: ${sub.name}`);
 }
 
 function verifyModalResponse() {
@@ -343,11 +201,27 @@ async function handleComponent(interaction: APIMessageComponentInteraction, env:
 }
 
 async function editFallback(env: Env, token: string, content: string): Promise<void> {
-  await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${token}/messages/@original`, {
+  const r = await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${token}/messages/@original`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, components: [] }),
+    body: JSON.stringify({ content, components: [], allowed_mentions: { parse: [] } }),
   });
+  if (!r.ok) {
+    console.error(`editFallback failed: ${r.status} ${await r.text()}`);
+  }
+}
+
+async function safeHandle(env: Env, token: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    console.error("handler threw:", e);
+    try {
+      await editFallback(env, token, "Something went wrong. Please try again, and ping a mod if it keeps happening.");
+    } catch (inner) {
+      console.error("editFallback also threw:", inner);
+    }
+  }
 }
 
 function json(data: unknown): Response {

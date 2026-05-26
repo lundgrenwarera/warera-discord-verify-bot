@@ -2,11 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 
 const commands = [
   {
-    name: "verify",
-    description: "Link your Discord account to your War Era account",
-    options: [
-      { type: 3, name: "username", description: "Your War Era username", required: true },
-    ],
+    name: "verify-setup",
+    description: "Open the verification setup panel (admins only)",
+    default_member_permissions: "8",
   },
   {
     name: "whois",
@@ -14,50 +12,6 @@ const commands = [
     options: [
       { type: 6, name: "user", description: "Discord user to look up" },
       { type: 3, name: "username", description: "War Era username to look up" },
-    ],
-  },
-  {
-    name: "verify-config",
-    description: "Configure verification for this server (admins only)",
-    default_member_permissions: "8",
-    options: [
-      { type: 1, name: "show", description: "Show current configuration" },
-      {
-        type: 1, name: "set-verified-role",
-        description: "Set the role assigned to everyone who verifies",
-        options: [{ type: 8, name: "role", description: "Role to assign", required: true }],
-      },
-      {
-        type: 1, name: "allow-country",
-        description: "Allow verification from this War Era country (omit any to allow all)",
-        options: [{ type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true }],
-      },
-      {
-        type: 1, name: "disallow-country",
-        description: "Stop allowing verification from this country",
-        options: [{ type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true }],
-      },
-      {
-        type: 1, name: "add-country-role",
-        description: "Give an extra role to verifications from a specific country",
-        options: [
-          { type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true },
-          { type: 8, name: "role", description: "Extra role to assign", required: true },
-        ],
-      },
-      {
-        type: 1, name: "remove-country-role",
-        description: "Remove a country-specific role mapping",
-        options: [
-          { type: 3, name: "country", description: "War Era country name", required: true, autocomplete: true },
-          { type: 8, name: "role", description: "Role to remove from this country", required: true },
-        ],
-      },
-      {
-        type: 1, name: "post-welcome",
-        description: "Post a welcome message with a Verify button in this channel",
-      },
-      { type: 1, name: "reset", description: "Wipe all verification config for this server" },
     ],
   },
   {

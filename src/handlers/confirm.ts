@@ -1,9 +1,17 @@
-import type { Env, GuildConfig, Link, PendingToken } from "../types";
+import type { Env, Link, PendingToken } from "../types";
 import { addRoleToMember, editOriginalResponse } from "../lib/discord";
 import { consume, LIMITS } from "../lib/rate-limit";
-import { fetchCompanies, fetchUserById, getCountryName, WareraApiError } from "../lib/warera-api";
-
-const FOOTER = "-# bot by [lundgren](https://app.warera.io/user/6a146313f0de273b8b1c27f6)";
+import {
+  fetchCompanies, fetchGovernment, fetchUserById,
+  getCountryName,
+} from "../lib/warera-api";
+import { friendlyApiError } from "../lib/warera-errors";
+import {
+  decideVerification, normalizeConfig,
+  rolesForCitizen, rolesForForeignGov,
+} from "../lib/config";
+import { governmentRolesFor, positionsHeldBy } from "../lib/government";
+import { messages } from "../lib/messages";
 
 export async function runVerifyConfirm(args: {
   env: Env;
@@ -11,23 +19,30 @@ export async function runVerifyConfirm(args: {
   discordUserId: string;
   guildId: string;
 }): Promise<void> {
-  const editFn = (content: string) =>
+  const editText = (content: string) =>
     editOriginalResponse({
       appId: args.env.DISCORD_APP_ID,
       interactionToken: args.interactionToken,
       content,
       components: [],
     });
+  const editEmbed = (embed: unknown) =>
+    editOriginalResponse({
+      appId: args.env.DISCORD_APP_ID,
+      interactionToken: args.interactionToken,
+      components: [],
+      embeds: [embed],
+    });
 
   const limit = await consume(args.env.TOKENS, `rl:confirm:${args.discordUserId}`, LIMITS.verifyConfirm);
   if (!limit.ok) {
-    await editFn(`Too many confirm attempts. Try /verify again in ${Math.ceil(limit.retryAfterSec / 60)} minutes.`);
+    await editText(messages.rateLimitConfirm(Math.ceil(limit.retryAfterSec / 60)));
     return;
   }
 
   const pending = await args.env.TOKENS.get(`p:${args.discordUserId}`, "json") as PendingToken | null;
   if (!pending) {
-    await editFn("No pending verification found, or it expired. Run `/verify` again.");
+    await editText(messages.noPendingVerification());
     return;
   }
 
@@ -35,18 +50,14 @@ export async function runVerifyConfirm(args: {
   try {
     companies = await fetchCompanies(pending.wareraUserId);
   } catch (e) {
-    await editFn(friendlyApiError(e));
+    await editText(friendlyApiError(e));
     return;
   }
 
   const tokenLower = pending.token.toLowerCase();
   const match = companies.find((c) => (c.name ?? "").toLowerCase().includes(tokenLower));
   if (!match) {
-    await editFn([
-      `No company named with the token \`${pending.token}\` found on **${pending.wareraUsername}**.`,
-      "",
-      "Rename one of your companies to include the token, save, then click Confirm again.",
-    ].join("\n"));
+    await editText(messages.tokenNotFound(pending.token, pending.wareraUsername));
     return;
   }
 
@@ -54,24 +65,49 @@ export async function runVerifyConfirm(args: {
   try {
     const user = await fetchUserById(pending.wareraUserId);
     countryId = user.country;
-  } catch {
-    /* country lookup is best-effort */
-  }
+  } catch { /* best-effort */ }
   const countryName = await getCountryName(args.env.LINKS, countryId);
 
-  const cfg = await args.env.GUILDS.get(`g:${args.guildId}`, "json") as GuildConfig | null;
-  if (!cfg?.verifiedRoleId) {
-    await editFn("This server hasn't finished setup yet. An admin needs to run `/verify-config set-verified-role` first.");
+  const cfg = normalizeConfig(await args.env.GUILDS.get(`g:${args.guildId}`, "json"));
+  if (!cfg.verifiedRoleId) {
+    await editText(messages.setupIncomplete());
     return;
   }
-  const allowed = cfg.allowedCountries ?? [];
-  if (allowed.length > 0) {
-    if (!countryName) {
-      await editFn("Couldn't read your War Era country, so this country-restricted server can't verify you. Try again in a few minutes.");
-      return;
+
+  const needsGovernment = !!cfg.allowForeignGovernment || Object.keys(cfg.governmentRoles ?? {}).length > 0;
+  let positions: ReturnType<typeof positionsHeldBy> = [];
+  if (needsGovernment && countryId) {
+    const gov = await fetchGovernment(countryId);
+    positions = positionsHeldBy(gov, pending.wareraUserId);
+  }
+
+  const decision = decideVerification({
+    cfg, countryName, isForeignGov: positions.length > 0,
+  });
+  if (!decision.allowed) {
+    if (decision.reason === "country-required") {
+      await editText(messages.countryRequired());
+    } else {
+      await editText(messages.countryNotAllowed(cfg.allowedCountries ?? [], countryName!));
     }
-    if (!allowed.includes(countryName)) {
-      await editFn(`This server only verifies citizens of: **${allowed.join(", ")}**. Your War Era account shows country **${countryName}**, which isn't allowed. If that's a mistake, contact a server moderator.`);
+    return;
+  }
+
+  const baseRoles = decision.mode === "citizen"
+    ? rolesForCitizen(cfg, countryName)
+    : rolesForForeignGov(cfg, countryName!);
+  const govRoles = decision.mode === "citizen" ? governmentRolesFor(cfg, positions) : [];
+  const allRoles = Array.from(new Set([...baseRoles, ...govRoles]));
+
+  for (const roleId of allRoles) {
+    const res = await addRoleToMember({
+      botToken: args.env.DISCORD_BOT_TOKEN,
+      guildId: args.guildId,
+      userId: args.discordUserId,
+      roleId,
+    });
+    if (!res.ok) {
+      await editEmbed(messages.roleHierarchyFailure());
       return;
     }
   }
@@ -82,50 +118,11 @@ export async function runVerifyConfirm(args: {
     country: countryName ?? undefined,
     verifiedAt: Math.floor(Date.now() / 1000),
   };
-
   await Promise.all([
     args.env.LINKS.put(`d:${args.discordUserId}`, JSON.stringify(link)),
     args.env.LINKS.put(`w:${pending.wareraUserId}`, args.discordUserId),
     args.env.TOKENS.delete(`p:${args.discordUserId}`),
   ]);
 
-  const rolesToAssign: string[] = [];
-  if (cfg?.verifiedRoleId) rolesToAssign.push(cfg.verifiedRoleId);
-  if (cfg?.countryRoles && countryName) {
-    const extras = cfg.countryRoles[countryName];
-    if (Array.isArray(extras)) rolesToAssign.push(...extras);
-  }
-
-  let anyAssignFailed = false;
-  for (const roleId of rolesToAssign) {
-    const res = await addRoleToMember({
-      botToken: args.env.DISCORD_BOT_TOKEN,
-      guildId: args.guildId,
-      userId: args.discordUserId,
-      roleId,
-    });
-    if (!res.ok) anyAssignFailed = true;
-  }
-
-  const lines = ["✓ Verified."];
-  if (anyAssignFailed) {
-    lines.push("");
-    lines.push("Heads up: the bot couldn't assign one of your roles. Ask a mod to drag the **WarEra** bot role above the verified/country roles in *Server Settings → Roles*.");
-  }
-  lines.push("");
-  lines.push(FOOTER);
-  await editFn(lines.join("\n"));
-}
-
-function friendlyApiError(e: unknown): string {
-  if (e instanceof WareraApiError) {
-    if (e.status === 503 || e.status === 502 || e.status === 504) {
-      return "The War Era API is down right now. Try again in a few minutes.";
-    }
-    if (e.status === 429) {
-      return "The War Era API rate-limited us. Wait a minute and try again.";
-    }
-    return `War Era API error (${e.status}).`;
-  }
-  return "Couldn't reach the War Era API. Try again in a minute.";
+  await editEmbed(messages.verifiedSuccess());
 }

@@ -57,20 +57,28 @@ export async function sendFollowup(opts: FollowupOptions): Promise<void> {
 export interface EditOriginalOptions {
   appId: string;
   interactionToken: string;
-  content: string;
+  content?: string;
   components?: unknown[];
+  embeds?: unknown[];
 }
 
 export async function editOriginalResponse(opts: EditOriginalOptions): Promise<void> {
   const url = `${API}/webhooks/${opts.appId}/${opts.interactionToken}/messages/@original`;
-  await fetch(url, {
+  const body: Record<string, unknown> = {
+    content: opts.content ?? "",
+    components: opts.components ?? [],
+    embeds: opts.embeds ?? [],
+    allowed_mentions: { parse: [] },
+  };
+  const r = await fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content: opts.content,
-      components: opts.components ?? [],
-    }),
+    body: JSON.stringify(body),
   });
+  if (!r.ok) {
+    const text = await r.text();
+    console.error(`editOriginalResponse failed: ${r.status} ${text}`);
+  }
 }
 
 export async function addRoleToMember(args: {

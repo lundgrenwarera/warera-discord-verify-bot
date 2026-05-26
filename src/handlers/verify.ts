@@ -1,8 +1,10 @@
 import type { Env, PendingToken } from "../types";
 import { editOriginalResponse } from "../lib/discord";
 import { consume, LIMITS } from "../lib/rate-limit";
-import { resolveUsername, fetchCompanies, WareraApiError } from "../lib/warera-api";
+import { resolveUsername, fetchCompanies } from "../lib/warera-api";
+import { friendlyApiError } from "../lib/warera-errors";
 import { generateToken } from "../lib/token";
+import { messages } from "../lib/messages";
 
 export async function runVerifyStart(args: {
   env: Env;
@@ -21,7 +23,7 @@ export async function runVerifyStart(args: {
 
   const userLimit = await consume(args.env.TOKENS, `rl:verify:${args.discordUserId}`, LIMITS.verifyStart);
   if (!userLimit.ok) {
-    await editFn(`You've started verification too many times. Try again in ${Math.ceil(userLimit.retryAfterSec / 60)} minutes.`);
+    await editFn(messages.rateLimitVerifyStart(Math.ceil(userLimit.retryAfterSec / 60)));
     return;
   }
 
@@ -102,15 +104,3 @@ export async function runVerifyStart(args: {
   ]);
 }
 
-function friendlyApiError(e: unknown): string {
-  if (e instanceof WareraApiError) {
-    if (e.status === 503 || e.status === 502 || e.status === 504) {
-      return "The War Era API is down right now. Try again in a few minutes.";
-    }
-    if (e.status === 429) {
-      return "The War Era API rate-limited us. Wait a minute and try again.";
-    }
-    return `War Era API error (${e.status}).`;
-  }
-  return "Couldn't reach the War Era API. Try again in a minute.";
-}

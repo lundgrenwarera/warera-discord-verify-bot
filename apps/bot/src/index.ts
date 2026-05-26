@@ -4,6 +4,7 @@ import type {
   APIMessageComponentInteraction,
   APIModalSubmitInteraction,
 } from "discord-api-types/v10";
+import { buildApi } from "./api";
 import { verifySignature } from "./lib/discord";
 import { consume, LIMITS } from "./lib/rate-limit";
 import { runVerifyStart } from "./handlers/verify";
@@ -27,8 +28,14 @@ const DEFERRED_UPDATE = JSON.stringify({
   type: InteractionResponseType.DeferredMessageUpdate,
 });
 
+const api = buildApi();
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname.startsWith("/api/")) {
+      return api.fetch(req, env, ctx);
+    }
     if (req.method !== "POST") return new Response("WarEra Discord Verify Bot", { status: 200 });
 
     const body = await req.text();

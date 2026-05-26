@@ -5,6 +5,9 @@ export interface Env {
   DISCORD_PUBLIC_KEY: string;
   DISCORD_APP_ID: string;
   DISCORD_BOT_TOKEN: string;
+  DISCORD_CLIENT_SECRET: string;
+  JWT_SECRET: string;
+  DASHBOARD_ORIGIN: string;
   TOKEN_TTL_SECONDS: string;
 }
 
@@ -58,6 +61,7 @@ export interface GuildConfig {
   allowForeignGovernment?: boolean;
   foreignCountryRoles?: Record<string, string[]>;
   minLevel?: number;
+  dashboardManagerRoleIds?: string[];
 }
 
 export interface Government {

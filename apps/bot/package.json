@@ -1,0 +1,29 @@
+{
+  "name": "@warera/bot",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "register-commands": "tsx scripts/register-commands.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@types/node": "^25.9.1",
+    "@vitest/expect": "^4.1.7",
+    "discord-api-types": "^0.37.111",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.7",
+    "wrangler": "^3.95.0"
+  },
+  "dependencies": {
+    "hono": "^4.12.23",
+    "jose": "^6.2.3",
+    "zod": "^4.4.3"
+  }
+}

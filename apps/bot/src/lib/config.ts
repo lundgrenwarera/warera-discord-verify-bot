@@ -63,6 +63,11 @@ export function normalizeConfig(raw: unknown): GuildConfig {
     out.minLevel = Math.floor(obj.minLevel);
   }
 
+  if (Array.isArray(obj.dashboardManagerRoleIds)) {
+    const ids = obj.dashboardManagerRoleIds.filter((s): s is string => typeof s === "string" && s.length > 0);
+    if (ids.length > 0) out.dashboardManagerRoleIds = ids;
+  }
+
   return out;
 }
 

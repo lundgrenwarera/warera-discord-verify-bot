@@ -12,7 +12,7 @@ export function App({ children }: { children: ReactNode }) {
       <footer className="mt-auto border-t border-border px-4 py-5 text-center text-[11px] text-text-faint">
         provided to you by{" "}
         <a href={LUNDGREN_PROFILE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-accent">
-          Lundbergs Technology AB
+          Lundgrens Technology AB
         </a>
         {" · "}
         <a href={TIP_ARTICLE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-accent">

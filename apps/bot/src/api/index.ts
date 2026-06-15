@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
-import type { Env, GuildConfig } from "../types";
+import type { Env, GuildConfig, Link } from "../types";
 import { GOVERNMENT_BUCKETS } from "../types";
 import {
   cacheUserGuilds, computeManagerGuildIds, exchangeOAuthCode, fetchOAuthGuilds, fetchOAuthUser,
   getCachedUserGuilds, issueSession, pickAdminGuildIds, verifySession, type SessionPayload,
 } from "./auth";
-import { buildMembersView, GuildAccessError } from "./members";
+import { buildMembersView, gatherTrackedRoles, GuildAccessError } from "./members";
 import { checkHierarchy, collectConfiguredRoleIds } from "../lib/hierarchy";
-import { fetchGuildRoles, sendChannelMessage } from "../lib/discord";
+import { fetchGuildRoles, removeRoleFromMember, sendChannelMessage } from "../lib/discord";
 import { fetchGovernment, fetchUserById, getCountryName, getCountryNames, resolveUsername } from "../lib/warera-api";
 
 async function fetchUserByIdSafe(id: string) {
@@ -43,7 +43,7 @@ export function buildApi(): Hono<AppEnv> {
     const origin = c.env.DASHBOARD_ORIGIN;
     return cors({
       origin: origin ? [origin, "http://localhost:5174"] : "*",
-      allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowHeaders: ["Authorization", "Content-Type"],
       credentials: false,
       maxAge: 86400,
@@ -267,6 +267,49 @@ export function buildApi(): Hono<AppEnv> {
     ]);
 
     return c.json({ ok: true, assigned, total: all.length });
+  });
+
+  app.delete("/api/guilds/:guildId/members/:discordUserId", async (c) => {
+    const guildId = c.req.param("guildId");
+    const discordUserId = c.req.param("discordUserId");
+
+    const link = await c.env.LINKS.get(`d:${discordUserId}`, "json") as Link | null;
+    if (!link) return c.json({ error: "user is not linked" }, 404);
+
+    const cfg = normalizeConfig(await c.env.GUILDS.get(`g:${guildId}`, "json"));
+    const trackedRoles = gatherTrackedRoles(cfg);
+
+    const memberRes = await fetch(
+      `https://discord.com/api/v10/guilds/${guildId}/members/${discordUserId}`,
+      { headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}` } },
+    );
+
+    let removed = 0;
+    let failed = 0;
+    if (memberRes.ok) {
+      const member = await memberRes.json() as { roles: string[] };
+      const toRemove = member.roles.filter((id) => trackedRoles.has(id));
+      for (const roleId of toRemove) {
+        const r = await removeRoleFromMember({
+          botToken: c.env.DISCORD_BOT_TOKEN,
+          guildId,
+          userId: discordUserId,
+          roleId,
+        });
+        if (r.ok) removed++;
+        else failed++;
+      }
+      if (toRemove.length > 0 && removed === 0) {
+        return c.json({ error: "no roles could be removed (check bot role hierarchy)" }, 500);
+      }
+    }
+
+    await Promise.all([
+      c.env.LINKS.delete(`d:${discordUserId}`),
+      c.env.LINKS.delete(`w:${link.wareraUserId}`),
+    ]);
+
+    return c.json({ ok: true, removed, failed });
   });
 
   app.get("/api/warera/countries", async (c) => {

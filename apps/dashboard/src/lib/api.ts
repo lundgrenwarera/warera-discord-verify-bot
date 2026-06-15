@@ -108,6 +108,11 @@ export const api = {
       method: "POST", body: JSON.stringify(payload),
     });
   },
+  unlinkMember: (guildId: string, discordUserId: string) =>
+    request<{ ok: true; removed: number; failed: number }>(
+      `/api/guilds/${guildId}/members/${discordUserId}`,
+      { method: "DELETE" },
+    ),
 };
 
 function extractWareraUserId(input: string): string | null {

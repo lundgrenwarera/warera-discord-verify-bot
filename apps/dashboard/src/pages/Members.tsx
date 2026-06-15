@@ -24,6 +24,8 @@ export function Members() {
   const [claimOpen, setClaimOpen] = useState<string | null>(null);
   const [claimName, setClaimName] = useState("");
   const [claimMessage, setClaimMessage] = useState<string | null>(null);
+  const [unlinkOpen, setUnlinkOpen] = useState<string | null>(null);
+  const [unlinkBusy, setUnlinkBusy] = useState(false);
 
   const load = () => {
     setRefreshing(true);
@@ -67,6 +69,22 @@ export function Members() {
       load();
     } catch (e) {
       setClaimMessage(String((e as { message?: string })?.message ?? e));
+    }
+  };
+
+  const unlink = async (discordUserId: string) => {
+    setUnlinkBusy(true);
+    setClaimMessage(null);
+    try {
+      const r = await api.unlinkMember(guildId, discordUserId);
+      const suffix = r.failed > 0 ? ` (${r.failed} could not be removed — check bot role hierarchy)` : "";
+      setClaimMessage(`Verification removed. ${r.removed} role(s) removed${suffix}.`);
+      setUnlinkOpen(null);
+      load();
+    } catch (e) {
+      setClaimMessage(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setUnlinkBusy(false);
     }
   };
 
@@ -154,6 +172,11 @@ export function Members() {
                       claimName={claimName}
                       setClaimName={setClaimName}
                       onConfirmClaim={() => claim(r.discordUserId)}
+                      unlinkOpen={unlinkOpen === r.discordUserId}
+                      onOpenUnlink={() => { setUnlinkOpen(r.discordUserId); setClaimMessage(null); }}
+                      onCancelUnlink={() => setUnlinkOpen(null)}
+                      onConfirmUnlink={() => unlink(r.discordUserId)}
+                      unlinkBusy={unlinkBusy}
                     />
                   ))}
                 </tbody>
@@ -168,6 +191,7 @@ export function Members() {
 
 function Row({
   row, claimOpen, onOpenClaim, onCancelClaim, claimName, setClaimName, onConfirmClaim,
+  unlinkOpen, onOpenUnlink, onCancelUnlink, onConfirmUnlink, unlinkBusy,
 }: {
   row: MemberRow;
   claimOpen: boolean;
@@ -176,6 +200,11 @@ function Row({
   claimName: string;
   setClaimName: (v: string) => void;
   onConfirmClaim: () => void;
+  unlinkOpen: boolean;
+  onOpenUnlink: () => void;
+  onCancelUnlink: () => void;
+  onConfirmUnlink: () => void;
+  unlinkBusy: boolean;
 }) {
   const avatar = row.avatar
     ? `https://cdn.discordapp.com/avatars/${row.discordUserId}/${row.avatar}.png?size=64`
@@ -254,8 +283,35 @@ function Row({
               Link →
             </button>
           )}
+          {row.linked && !unlinkOpen && (
+            <button
+              type="button"
+              onClick={onOpenUnlink}
+              className="font-mono text-[11px] uppercase tracking-wider text-loss hover:underline"
+            >
+              Unlink →
+            </button>
+          )}
         </td>
       </tr>
+      {unlinkOpen && (
+        <tr className="border-b border-border">
+          <td colSpan={7} className="py-3">
+            <div className="rounded border border-loss/40 bg-bg p-3">
+              <div className="label text-loss">Remove verification</div>
+              <p className="mt-1 text-xs text-text-muted">
+                Removes all tracked roles ({row.wareraUsername ?? "this member"}) from the server and deletes the link to their War Era account. They stay in the server and can re-verify.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button onClick={onConfirmUnlink} disabled={unlinkBusy}>
+                  {unlinkBusy ? "Removing…" : "Remove verification"}
+                </Button>
+                <Button variant="ghost" onClick={onCancelUnlink} disabled={unlinkBusy}>Cancel</Button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
       {claimOpen && (
         <tr className="border-b border-border">
           <td colSpan={7} className="py-3">

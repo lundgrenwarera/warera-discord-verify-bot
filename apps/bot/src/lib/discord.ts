@@ -101,6 +101,26 @@ export async function addRoleToMember(args: {
   return { ok: false, status: r.status, body: await r.text() };
 }
 
+export async function removeRoleFromMember(args: {
+  botToken: string;
+  guildId: string;
+  userId: string;
+  roleId: string;
+}): Promise<{ ok: boolean; status: number; body?: string }> {
+  const r = await fetch(
+    `${API}/guilds/${args.guildId}/members/${args.userId}/roles/${args.roleId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bot ${args.botToken}`,
+        "X-Audit-Log-Reason": "Verification removed via dashboard",
+      },
+    },
+  );
+  if (r.ok) return { ok: true, status: r.status };
+  return { ok: false, status: r.status, body: await r.text() };
+}
+
 export interface DiscordRole {
   id: string;
   name: string;

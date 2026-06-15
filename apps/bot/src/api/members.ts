@@ -61,7 +61,7 @@ async function fetchAllGuildMembers(env: Env, guildId: string): Promise<DiscordM
   return all;
 }
 
-function gatherTrackedRoles(cfg: GuildConfig): Set<string> {
+export function gatherTrackedRoles(cfg: GuildConfig): Set<string> {
   const out = new Set<string>();
   for (const k of TRACKED_ROLE_FIELDS) {
     const v = cfg[k];
